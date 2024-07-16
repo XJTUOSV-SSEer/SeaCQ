@@ -91,7 +91,7 @@ class Accumulator:
             a - 证明的第一部分
             d - 证明的第二部分
             acc - acc值
-            str - 要验证不存在的元素，一个素数
+            x - 要验证不存在的元素，一个素数
         output:
             flag - 若为True，验证通过；若为False，验证未通过，说明proof是伪造的
         '''

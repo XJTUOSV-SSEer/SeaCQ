@@ -1,7 +1,7 @@
 import Accumulator
 from Crypto.Cipher import AES
 import hmac
-from typing import Dict,Set,Tuple
+from typing import Dict,Set,Tuple,Any
 import random
 
 
@@ -131,20 +131,70 @@ def search(Q:Set[str],ST:Dict[str,int]):
     # 返回token
     return t_w,P_Q,ST[w]
 
-            
 
-
-
-
-def update():
+def verify(w:str,P_Q:int,result:Set[Tuple[bytes,Any,int]]):
     '''
+    验证服务器返回的查询结果。
+    input:
+        w - 用户此前从Q中选定的关键字
+        P_Q - Q中除w之外，其余关键字对应素数的乘积
+        result - 服务器返回的查询结果
+    output:
+        flag - 标识验证是否通过。若为True，验证通过；若为False，验证失败
+    '''
+    # 解密密钥
+    k2='XJTUOSV2'.zfill(16).encode('utf-8')
+    aes=AES.new(key=k2)
+    # 累加器
+    msa=Accumulator.Accumulator(p=252533614457563255817176556954479732787,
+                                q=326896810465200637570669519551882712907,
+                                g=65537)
     
-    '''
 
-def verify():
-    '''
+    # X_w储存w对应的fid的素数
+    X_w=set()
+    # 储存匹配查询条件的fid
+    R=set()
 
-    '''
+    # 对w对应的链进行解密，得到fid和t_fid
+    for c_fid,pi,type in result:
+        # 解密c_fid，得到fid
+        fid=aes.decrypt(c_fid).decode('utf-8').lstrip('0')
+        # 从区块链中读取Acc_fid
+
+        # 验证
+        if type==0:
+            # 验证P_Q不存在
+            if not msa.verify_non_membership(pi[0],pi[1],Acc_fid,P_Q):
+                print("correctness verification failed")
+                return False
+            else:
+                X_w.add(Accumulator.str2prime(fid))
+        elif type==1:
+            # 验证P_Q存在
+            if not msa.verify_membership(pi,Acc_fid,P_Q):
+                print("correctness verification failed")
+                return False
+            else:
+                X_w.add(Accumulator.str2prime(fid))
+                R.add(fid)
+    
+    # 验证完整性
+    # 从区块链中读取Acc_w
+
+    # 根据X_w计算Acc，并于Acc_w对比，判断是否相等
+    Acc=msa.genAcc(X_w)
+    if Acc!=Acc_w:
+        print("completeness verification failed")
+        return False
+    
+    return True
+
+
+
+
+
+
 
 
 if __name__ == "__main__":

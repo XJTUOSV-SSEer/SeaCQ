@@ -54,5 +54,3 @@ def search(t_w:bytes,P_Q,c,index1:Dict[bytes,Tuple[bytes,bytes]],index2:Dict[byt
     
     # 返回结果
         return result
-        
-            

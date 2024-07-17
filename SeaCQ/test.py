@@ -9,7 +9,7 @@ web3 = Web3(Web3.HTTPProvider(ganache_url))
 
 # 加载合约地址和ABI
 # 合约地址
-contract_address='0x50bdca0985E862A2c7b4F09bF8755E714634Be23'
+contract_address='0xEa5031B83bCECA32c6443f3D6CCe87a4Cb10cfD6'
 # 从json文件中读取abi
 json_file='./contract/build/contracts/ADS.json'
 abi=None
@@ -21,26 +21,24 @@ with open(json_file,'r') as f:
 contract=web3.eth.contract(address=contract_address,abi=abi)
 
 # 要传递的数据
-s = 'abc'.zfill(16)
-hex_s=HexBytes(s)
-# hex_s = s.encode('utf-8').hex()
-# hex_s = s.encode('utf-8').hex()
-num=123813810293102398102938102381029381029381020230238947293842309802938
-# 计算大整数num对应的字节数
-byte_length=(num.bit_length()+7)//8
-# hex_num=HexBytes(num)
-hex_num=num.to_bytes(byte_length,byteorder='big')
-print(hex_s)
-print(HexBytes(num))
+w1 = 'a'.zfill(16)
+n1=123813810293102398102938102381029381029381020230238947293842309802938
+w2='b'.zfill(16)
+n2=13012983012938487394571823019230129802482095820984230994820348230809219
+w3='c'.zfill(16)
+n3=int(n1)*int(n2)
 
-# 检查是否可编码
-print(web3.is_encodable('bytes16',hex_s))
-print(web3.is_encodable('bytes1[]', [b'\x00',b'\x01',b'\x02']))
-print([bytearray([b]) for b in hex_num])
+w_list=[Web3.toBytes(text=w1),Web3.toBytes(text=w2)]
+v_list=[Web3.toBytes(int(n1)),Web3.toBytes(int(n2))]
+
+
 
 
 # 调用智能合约
-# contract.functions.test(10).call()
-contract.functions.setADS(hex_s,[b'\x00',b'\x01',b'\x02']).transact({'from':web3.eth.accounts[0], 'gasPrice': web3.eth.gasPrice, 'gas': web3.eth.getBlock('latest').gasLimit})
-r=contract.functions.getADS(hex_s).call()
-print(r)
+contract.functions.batch_setADS(w_list,v_list,2).transact(
+    {'from':web3.eth.accounts[0], 
+     'gasPrice': web3.eth.gasPrice, 
+     'gas': web3.eth.getBlock('latest').gasLimit})
+
+r=contract.functions.getADS(Web3.toBytes(text=w2)).call()
+print(Web3.toInt(r))

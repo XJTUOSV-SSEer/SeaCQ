@@ -2,6 +2,8 @@ import Accumulator
 from Crypto.Cipher import AES
 import hmac
 from typing import Dict,Set,Tuple
+from web3 import Web3
+import json
 
 
 def search(t_w:bytes,P_Q,c,index1:Dict[bytes,Tuple[bytes,bytes]],index2:Dict[bytes,int]):

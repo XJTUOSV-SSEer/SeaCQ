@@ -3,19 +3,25 @@ from Crypto.Cipher import AES
 import hmac
 from typing import Dict,Set,Tuple,Any
 import random
+from web3 import Web3
+import json
+import math
 
 
-def setup(dataset:Dict[str,Set[str]]):
+def setup(dataset:Dict[str,Set[str]], web3, contract):
     '''
     用户初始化，加密索引。返回两个索引，并在函数内完成智能合约的调用。
     input:
         dataset - 数据集。一个字典。key为文件id，字符串类型。value为文件中的关键字集合，集合中元素为字符串类型。
+        web3 - web3对象
+        contract - 智能合约对象
     output:
         k1 - PRF的密钥，用于生成tag。bytes类型
         k2 - 对称加密密钥。bytes类型。bytes类型
         index1 - 一个字典。key为location（bytes类型）；value为一个元组(c_fid,t_fid)，c_fid为fid的密文（bytes类型），t_fid为fid的tag（bytes类型）
         index2 - 一个字典。key为t_fid（bytes类型），value为该文件对应的P_fid（一个大整数）。
         ST - 一个字典。key为w（str类型），value为w的计数器（int类型）
+        gas - 消耗的gas
     '''
 
     # 索引，将会发送至服务器
@@ -55,7 +61,7 @@ def setup(dataset:Dict[str,Set[str]]):
         X_w=set()
 
         # 遍历id集合
-        aes=AES.new(key=k2)
+        aes=AES.new(key=k2,mode=AES.MODE_ECB)
         for fid in fid_set:
             # 生成location
             loc=hmac.new(key=t_w,msg=c.to_bytes(length=4,byteorder='big',signed=True),digestmod='sha256').digest()
@@ -94,14 +100,68 @@ def setup(dataset:Dict[str,Set[str]]):
         ADS[fid]=Acc_fid
     
     # 调用智能合约
-        
+    batch_size=1
+    gas=batch_add(ADS,batch_size,web3,contract)        
 
     # 将密钥和构建的两个索引返回
-    return k1,k2,index1,index2,ST
+    return k1,k2,index1,index2,ST,gas
 
 
 
+def batch_add(ADS:Dict[str,int], batch_size:int, web3, contract):
+    '''
+    setup阶段，调用智能合约，将生成的ADS字典分批加入区块链。可能存在一部分元素不足batch_size，最后当作一个batch处理。
+    input:
+        ADS -  setup阶段生成的字典，key为fid或w，value为对应的Acc
+        batch_size - 每个batch的大小
+        web3 - Web3对象
+        contract - 合约对象
+    output:
+        gas - 花费的gas
+    '''
+    # 计算ADS的size
+    total_size=len(ADS)
 
+    # 计算要分多少个batch
+    math.ceil(total_size/batch_size)
+
+    # 将数据按照batch_size分组
+    # 剩余未被处理的k-v pair数
+    remain_size=total_size
+    # 消耗的gas
+    gas=0
+    while remain_size>0:
+        # 当前批次的大小
+        current_size=0
+        if remain_size>=batch_size:
+            current_size=batch_size
+        else:
+            current_size=remain_size
+        
+        # 将current_size大小的数据从ADS中取出，并转换为两个list，分别储存key和value
+        # 从ADS中取出current_size个k-v pair
+        k_list=random.sample(list(ADS.keys()),current_size)
+        v_list=[ADS[k] for k in k_list]
+        # 从ADS中删除这些数据
+        for k in k_list:
+            ADS.pop(k)
+        
+        # 调用智能合约，将两个list发送至合约，从而设置合约中的mapping
+        # 首先将两个list中的元素转换为ABI要求的数据类型
+        _k_list=[Web3.toBytes(text=k.zfill(16)) for k in k_list]
+        _v_list=[Web3.toBytes(int(v)) for v in v_list]
+        # 调用合约，并await，得到gas消耗
+        tx_hash=contract.functions.batch_setADS(_k_list, _v_list, current_size).transact({
+            'from':web3.eth.accounts[0], 
+            'gasPrice': web3.eth.gasPrice, 
+            'gas': web3.eth.getBlock('latest').gasLimit})
+        tx_receipt = web3.eth.get_transaction_receipt(tx_hash)
+        gas += tx_receipt['gasUsed']
+
+        # 更新剩余数量
+        remain_size=remain_size-current_size
+
+    return gas
 
         
     
@@ -132,7 +192,7 @@ def search(Q:Set[str],ST:Dict[str,int]):
     return t_w,P_Q,ST[w]
 
 
-def verify(w:str,P_Q:int,result:Set[Tuple[bytes,Any,int]]):
+def verify(w:str, P_Q:int, result:Set[Tuple[bytes,Any,int]], web3, contract):
     '''
     验证服务器返回的查询结果。
     input:
@@ -161,6 +221,7 @@ def verify(w:str,P_Q:int,result:Set[Tuple[bytes,Any,int]]):
         # 解密c_fid，得到fid
         fid=aes.decrypt(c_fid).decode('utf-8').lstrip('0')
         # 从区块链中读取Acc_fid
+        Acc_fid=contract.functions.getADS(fid).call()
 
         # 验证
         if type==0:

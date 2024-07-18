@@ -31,8 +31,10 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
     msa=Accumulator.Accumulator(p=252533614457563255817176556954479732787,
                                 q=326896810465200637570669519551882712907,
                                 g=65537)
-    # ADS，将会发送给区块链。key为w或fid（str类型），value为对应的Acc值（int类型）
-    ADS=dict()
+    # ADS_w，将会发送给区块链。key为w（str类型），value为对应的Acc值（int类型）
+    ADS_w=dict()
+    # ADS_fid，将会发送给区块链。key为fid（str类型），value为对应的Acc值（int类型）
+    ADS_fid=dict()
     # 一个字典，储存每个关键字对应的计数器。key为str类型，value为int类型
     ST=dict()
 
@@ -81,8 +83,8 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
         ST[w]=c
         # 计算X_w对应的Acc
         Acc_w, _=msa.genAcc(X_w)
-        # 将Acc加入ADS
-        ADS[w]=Acc_w
+        # 将Acc_w加入ADS
+        ADS_w[w]=Acc_w
     
     # 计算每个文件对应的Acc_fid和x_p
     for fid,wset in dataset.items():
@@ -97,22 +99,27 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
         # 将t_fid,P_fid加入索引
         index2[t_fid]=P_fid
         # 将Acc_fid加入ADS
-        ADS[fid]=Acc_fid
+        ADS_fid[fid]=Acc_fid
     
     # 调用智能合约
     batch_size=1
-    gas=batch_add(ADS,batch_size,web3,contract)        
+    # 将ADS_w批量存入区块链
+    gas_w=batch_add(ADS_w, 1, batch_size,web3,contract)
+    gas_fid=batch_add(ADS_fid, 2, batch_size,web3,contract)
+    # 总的gas
+    gas=gas_w+gas_fid
 
     # 将密钥和构建的两个索引返回
     return k1,k2,index1,index2,ST,gas
 
 
 
-def batch_add(ADS:Dict[str,int], batch_size:int, web3, contract):
+def batch_add(ADS:Dict[str,int], type:int, batch_size:int, web3, contract):
     '''
     setup阶段，调用智能合约，将生成的ADS字典分批加入区块链。可能存在一部分元素不足batch_size，最后当作一个batch处理。
     input:
-        ADS -  setup阶段生成的字典，key为fid或w，value为对应的Acc
+        ADS_w -  setup阶段生成的字典，key为w或fid，value为对应的Acc
+        type - 若type==1，字典的key为w；若type==2，字典的key为w
         batch_size - 每个batch的大小
         web3 - Web3对象
         contract - 合约对象
@@ -151,7 +158,8 @@ def batch_add(ADS:Dict[str,int], batch_size:int, web3, contract):
         _k_list=[Web3.toBytes(text=k.zfill(16)) for k in k_list]
         _v_list=[Web3.toBytes(int(v)) for v in v_list]
         # 调用合约，并await，得到gas消耗
-        tx_hash=contract.functions.batch_setADS(_k_list, _v_list, current_size).transact({
+        # 通过type参数指定存入合约的哪个mapping
+        tx_hash=contract.functions.batch_setADS(_k_list, _v_list, current_size, type).transact({
             'from':web3.eth.accounts[0], 
             'gasPrice': web3.eth.gasPrice, 
             'gas': web3.eth.getBlock('latest').gasLimit})
@@ -233,7 +241,7 @@ def verify(w:str, P_Q:int, result:Set[Tuple[bytes,Any,int]], web3, contract, k2:
         fid=fid_bytes.lstrip('0')
 
         # 从区块链中读取Acc_fid的字节形式，并转换为大整数
-        Acc_fid_bytes=contract.functions.getADS(Web3.toBytes(text=fid.zfill(16))).call()
+        Acc_fid_bytes=contract.functions.getADS(Web3.toBytes(text=fid.zfill(16)), 2).call()
         Acc_fid=Web3.toInt(Acc_fid_bytes)
 
         # 验证
@@ -258,7 +266,7 @@ def verify(w:str, P_Q:int, result:Set[Tuple[bytes,Any,int]], web3, contract, k2:
     
     # 验证完整性
     # 从区块链中读取Acc_w的字节形式，
-    Acc_w_bytes=contract.functions.getADS(Web3.toBytes(text=w.zfill(16))).call()
+    Acc_w_bytes=contract.functions.getADS(Web3.toBytes(text=w.zfill(16)), 1).call()
     Acc_w=Web3.toInt(Acc_w_bytes)
 
     # 根据X_w计算Acc，并于Acc_w对比，判断是否相等

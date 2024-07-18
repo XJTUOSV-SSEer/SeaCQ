@@ -167,14 +167,16 @@ def batch_add(ADS:Dict[str,int], batch_size:int, web3, contract):
     
 
 
-def search(Q:Set[str],ST:Dict[str,int]):
+def search(Q:Set[str],ST:Dict[str,int], k1:bytes):
     '''
     生成查询token
     input:
         Q - 查询条件。一个集合，Set[str]类型，储存要查询的关键字
         ST - 一个字典，储存每个关键字的计数器。key为w（str类型），value为w的计数器（int类型）
+        k1 - 密钥k1
     output:
-        t_w - 从Q中选出的w
+        w - 从Q中选出的w
+        t_w - 从Q中选出的w的tag
         P_Q - Q中除w之外，其余关键字对应素数的乘积
         c - w对应的计数器
     '''
@@ -189,22 +191,26 @@ def search(Q:Set[str],ST:Dict[str,int]):
             P_Q=P_Q * Accumulator.str2prime(s)
     
     # 返回token
-    return t_w,P_Q,ST[w]
+    return w, t_w,P_Q,ST[w]
 
 
-def verify(w:str, P_Q:int, result:Set[Tuple[bytes,Any,int]], web3, contract):
+def verify(w:str, P_Q:int, result:Set[Tuple[bytes,Any,int]], web3, contract, k2:bytes):
     '''
     验证服务器返回的查询结果。
     input:
         w - 用户此前从Q中选定的关键字
         P_Q - Q中除w之外，其余关键字对应素数的乘积
         result - 服务器返回的查询结果
+        web3 - web3对象
+        contract - 合约对象
+        k2 - 密钥k2
     output:
         flag - 标识验证是否通过。若为True，验证通过；若为False，验证失败
+        R - 查询结果的明文。一个集合，元素为str。
     '''
     # 解密密钥
     k2='XJTUOSV2'.zfill(16).encode('utf-8')
-    aes=AES.new(key=k2)
+    aes=AES.new(key=k2,mode=AES.MODE_ECB)
     # 累加器
     msa=Accumulator.Accumulator(p=252533614457563255817176556954479732787,
                                 q=326896810465200637570669519551882712907,
@@ -217,39 +223,51 @@ def verify(w:str, P_Q:int, result:Set[Tuple[bytes,Any,int]], web3, contract):
     R=set()
 
     # 对w对应的链进行解密，得到fid和t_fid
-    for c_fid,pi,type in result:
-        # 解密c_fid，得到fid
-        fid=aes.decrypt(c_fid).decode('utf-8').lstrip('0')
-        # 从区块链中读取Acc_fid
-        Acc_fid=contract.functions.getADS(fid).call()
+    for tup in result:
+        c_fid=tup[0]
+        pi=tup[1]
+        type=tup[2]
+        # 解密c_fid，得到fid的16字节形式
+        fid_bytes=aes.decrypt(c_fid).decode('utf-8')
+        # 去掉填充，得到fid的字符串形式
+        fid=fid_bytes.lstrip('0')
+
+        # 从区块链中读取Acc_fid的字节形式，并转换为大整数
+        Acc_fid_bytes=contract.functions.getADS(Web3.toBytes(text=fid.zfill(16))).call()
+        Acc_fid=Web3.toInt(Acc_fid_bytes)
 
         # 验证
         if type==0:
-            # 验证P_Q不存在
-            if not msa.verify_non_membership(pi[0],pi[1],Acc_fid,P_Q):
+            # 取出p=P_Q/gcd(P_fid,P_Q)
+            p=tup[3]
+
+            # 验证不匹配P_Q
+            if (P_Q%p!=0) or (not msa.verify_non_membership(pi[0],pi[1],Acc_fid,p)):
                 print("correctness verification failed")
-                return False
+                return False,R
             else:
                 X_w.add(Accumulator.str2prime(fid))
         elif type==1:
             # 验证P_Q存在
             if not msa.verify_membership(pi,Acc_fid,P_Q):
                 print("correctness verification failed")
-                return False
+                return False,R
             else:
                 X_w.add(Accumulator.str2prime(fid))
                 R.add(fid)
     
     # 验证完整性
-    # 从区块链中读取Acc_w
+    # 从区块链中读取Acc_w的字节形式，
+    Acc_w_bytes=contract.functions.getADS(Web3.toBytes(text=w.zfill(16))).call()
+    Acc_w=Web3.toInt(Acc_w_bytes)
 
     # 根据X_w计算Acc，并于Acc_w对比，判断是否相等
-    Acc=msa.genAcc(X_w)
+    Acc,_=msa.genAcc(X_w)
     if Acc!=Acc_w:
         print("completeness verification failed")
-        return False
-    
-    return True
+        return False, R
+
+    return True, R
 
 
 

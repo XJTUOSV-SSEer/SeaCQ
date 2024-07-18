@@ -1,6 +1,10 @@
+import imp
+import time
 from web3 import Web3
 import json
 import owner
+import server
+import experiment
 
 ########################## 连接到区块链网络 #########################
 # ganache网络
@@ -9,7 +13,7 @@ web3 = Web3(Web3.HTTPProvider(ganache_url))
 
 ########################### 加载合约地址和ABI ############################
 # 合约地址
-contract_address='0xEa5031B83bCECA32c6443f3D6CCe87a4Cb10cfD6'
+contract_address='0x1047576cF8FF65E774735c677Ea250634C390402'
 # 从json文件中读取abi
 json_file='./contract/build/contracts/ADS.json'
 abi=None
@@ -22,10 +26,49 @@ contract=web3.eth.contract(address=contract_address,abi=abi)
 
 
 ############################ 业务代码 ###################################
-# 数据集
-dataset={'f1':{'w1','w2'}, 'f2':{'w2','w3'}}
+
+# # 小数据集
+# dataset={'f1':{'w1','w2'}, 'f2':{'w2','w3'}}
+# # 查询条件
+# Q={'w1','w3'}
+
+# 中数据集
+# dataset={'f1':{'w1','w2','w3','w4'}, 'f2':{'w1','w3','w5','w6'}, 'f3':{'w2','w3','w5','w7'}, 
+#         'f4':{'w1','w2','w4','w6','w7'}}
+# Q={'w1','w2','w3'}
+# Q={'w6','w4','w1','w3'}
+# Q={'w4','w3','w2','w1'}
+# Q={'w6','w4','w1','w7'}
+
+print("generate dataset")
+
+# 大数据集
+dataset=experiment.gen_dataset(3,3)
+print(dataset)
+Q={'1','2','3'}
 
 # owner setup
 k1,k2,index1,index2,ST,gas=owner.setup(dataset,web3,contract)
-print(index2)
-print(gas)
+
+print("setup finish")
+
+# user search
+# 生成token
+w, t_w,P_Q,c=owner.search(Q,ST,k1)
+
+print("tokengen finish")
+
+# server搜索并返回结果
+start_time = time.time()
+result=server.search(t_w,P_Q,c,index1,index2)
+end_time = time.time()
+print("search time cost:", end_time - start_time, "s")
+print("search finish")
+
+# user验证
+start_time = time.time()
+flag,R=owner.verify(w,P_Q,result, web3,contract,k2)
+end_time = time.time()
+print("verify time cost:", end_time - start_time, "s")
+print(flag)
+print(R)

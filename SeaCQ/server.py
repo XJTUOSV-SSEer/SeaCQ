@@ -4,6 +4,7 @@ import hmac
 from typing import Dict,Set,Tuple
 from web3 import Web3
 import json
+import numbthy
 
 
 def search(t_w:bytes,P_Q,c,index1:Dict[bytes,Tuple[bytes,bytes]],index2:Dict[bytes,int]):
@@ -17,8 +18,9 @@ def search(t_w:bytes,P_Q,c,index1:Dict[bytes,Tuple[bytes,bytes]],index2:Dict[byt
                  t_fid为fid的tag（bytes类型）
         index2 - 索引2，一个字典。key为t_fid（bytes类型），value为该文件对应的P_fid（一个大整数）。
     output:
-        result - 查询结果及证明。一个集合，其中元素为元组类型(c_fid,pi,type)。c_fid为密文，pi为该文件对应的存在证明/不存在证明，
-                 type标识pi的类型：若是存在证明，type==1; 若是不存在证明，type==0
+        result - 查询结果及证明。一个集合，其中元素为元组类型(c_fid,pi,type[,p])。c_fid为密文，pi为该文件对应的存在证明/不存在证明，
+                 type标识pi的类型：若是存在证明，type==1; 若是不存在证明，type==0。当是不存在证明时，额外返回p，即
+                 p=P_Q/gcd(P_fid,P_Q)
     '''
     # 结果
     result=set()
@@ -43,16 +45,25 @@ def search(t_w:bytes,P_Q,c,index1:Dict[bytes,Tuple[bytes,bytes]],index2:Dict[byt
             # 该文件匹配查询条件Q，生成存在证明
             pi=msa.prove_membership(P_Q,P_fid)
             type=1
+            # 将密文与证明加入结果
+            t=(c_fid,pi,type)
+            result.add(t)
         else:
+            # 求解P_fid和P_Q的最大公约数
+            gcd=numbthy.gcd(P_fid,P_Q)
+
+            # P_Q / gcd
+            p=P_Q//gcd
+
             # 该文件不匹配Q，生成不存在证明
-            pi=msa.prove_non_membership(P_Q,P_fid)
+            pi=msa.prove_non_membership(p,P_fid)
             type=0
+
+            t=(c_fid,pi,type,p)
+            result.add(t)
         
-        # 将密文与证明加入结果
-        t=(c_fid,pi,type)
-        result.add(t)
         # 更新计数器
         c=c-1
     
     # 返回结果
-        return result
+    return result

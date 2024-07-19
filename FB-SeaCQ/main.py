@@ -13,7 +13,7 @@ web3 = Web3(Web3.HTTPProvider(ganache_url))
 
 ########################### 加载合约地址和ABI ############################
 # 合约地址
-contract_address='0x55BaA669a18E664D6b6c9C4Fae3159bC4374eEB2'
+contract_address='0x2dc4574F386cBCa20B0720AF5399BB76b0b6abcb'
 # 从json文件中读取abi
 json_file='../contract/build/contracts/ADS.json'
 abi=None
@@ -24,13 +24,13 @@ with open(json_file,'r') as f:
 ############################ 生成合约账户 ##############################
 contract=web3.eth.contract(address=contract_address,abi=abi)
 
-
 ############################ 业务代码 ###################################
 
 # # 小数据集
 # dataset={'f1':{'w1','w2'}, 'f2':{'w2','w3'}}
 # # 查询条件
-# Q={'w1','w3'}
+# Q={'w1'}
+
 
 # 中数据集
 # dataset={'f1':{'w1','w2','w3','w4'}, 'f2':{'w1','w3','w5','w6'}, 'f3':{'w2','w3','w5','w7'}, 
@@ -43,18 +43,16 @@ contract=web3.eth.contract(address=contract_address,abi=abi)
 
 # 大数据集
 dataset=experiment.gen_dataset(50,1000)
-Q={'1','2','3'}
+Q={'1','2'}
 # print(dataset)
-# print("generate dataset")
+print("generate dataset")
 
-# dataset={'9': {'1'}, '18': {'1'}, '17': {'1', '2'}, '3': {'2'}, '25': {'2'}, '2': {'3'}, '10': {'3'}, '23': {'3'}}
-# Q={'1','2','3'}
 
 # owner setup
 start_time = time.time()
 k1,k2,index1,index2,ST,gas=owner.setup(dataset,web3,contract)
 end_time = time.time()
-print("search time cost:", end_time - start_time, "s")
+print("setup time cost:", end_time - start_time, "s")
 print("setup finish")
 
 # user search

@@ -149,3 +149,19 @@ class Accumulator:
             return True
         else:
             return False
+    
+
+    def add_element(self, acc:int, x:int):
+        '''
+        已有累加值acc，对应素数集x_p。求解将x加入后的新的acc值
+        input:
+            acc - 
+            x -  新元素对应的素数
+        output:
+            acc_new - 更新后的acc
+        '''
+
+        # phi_n优化
+        phi_n= (self.p-1)*(self.q-1)
+        return numbthy.power_mod(acc, x%phi_n, self.n)
+

@@ -78,3 +78,26 @@ def search(t_w:bytes, P_Q, st, index1:Dict[bytes,Tuple[bytes,bytes]], index2:Dic
     
     # 返回结果
     return result
+
+
+
+def update(op:str, updtk: Tuple, index1:Dict[bytes,Tuple[bytes,bytes]], index2:Dict[bytes,int]):
+    '''
+    根据op类型和owner返回的update token，对储存的索引进行更新
+    input:
+        op - 操作类型。一个字符串，'add'或'del'
+        tpdtk - 若op==add，元组为((loc,c_fid,c_st),(t_fid,P_fid))；
+                若op==del，元组为(t_fid,P_fid)
+        index1 - 索引1，一个字典。key为location（bytes类型）；value为一个元组(c_fid,c_st)，c_fid为fid的密文（bytes类型），
+                 c_st为fid的st（bytes类型）
+        index2 - 索引2，一个字典。key为t_fid（bytes类型），value为该文件对应的P_fid（一个大整数）。
+    '''
+    if op=='add':
+        #  更新index1和index2
+        e1=updtk[0]
+        e2=updtk[1]
+        index1[e1[0]]=(e1[1], e1[2])
+        index2[e2[0]]=e2[1]
+    elif op=='del':
+        e2=updtk
+        index2[e2[0]]=e2[1]

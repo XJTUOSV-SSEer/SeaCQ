@@ -165,3 +165,16 @@ class Accumulator:
         phi_n= (self.p-1)*(self.q-1)
         return numbthy.power_mod(acc, x%phi_n, self.n)
 
+    
+    def del_element(self, acc:int, x:int):
+        '''
+        已有累加值acc，对应素数集x_p。求解从x_p中删除x后新的acc值
+        input:
+            acc - 
+            x - 被删去元素对应的素数
+        output:
+            acc_new - 更新后的acc
+        '''
+        # phi_n
+        phi_n= (self.p-1)*(self.q-1)
+        return numbthy.power_mod(acc, numbthy.inverse_mod(x, phi_n), self.n)

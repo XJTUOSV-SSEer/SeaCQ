@@ -7,6 +7,10 @@ contract ADS {
     // 定义存储ACC_fid的 mapping
     mapping(bytes16 => bytes) public dict_fid;
 
+    // bytes数组，第一个元素为ACC_ADS，第二个元素为ACC_P
+    bytes[2] public total_ADS;
+
+
     // 设置一个k-v pair到dict。k为字符串，v为动态数组
     // typ为要设置的mapping。若typ==1，加入dict_w；若typ==2，加入dict_fid
     function setADS(bytes16 _key, bytes memory _value, uint typ) public {
@@ -47,4 +51,19 @@ contract ADS {
             return dict_fid[_key];
         }        
     }
+
+
+
+    // 设置ACC_ADS和ACC_P
+    function set(bytes memory ads, bytes memory p) public {
+        total_ADS[0]=ads;
+        total_ADS[1]=p;
+    }
+
+    // 返回ACC_ADS和ACC_P
+    function get() public view returns (bytes[2] memory){
+        return total_ADS;
+    }
+
+
 }

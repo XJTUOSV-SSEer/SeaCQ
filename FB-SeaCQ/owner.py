@@ -237,7 +237,7 @@ def verify(w:str, P_Q:int, result:Set[Tuple[bytes,Any,int]], web3, contract, k2:
     验证服务器返回的查询结果。
     input:
         w - 用户此前从Q中选定的关键字
-        P_Q - Q中所有 关键字对应素数的乘积
+        P_Q - Q中所有关键字对应素数的乘积
         result - 服务器返回的查询结果
         web3 - web3对象
         contract - 合约对象

@@ -1,4 +1,5 @@
 from distutils.command.install_egg_info import to_filename
+from itertools import accumulate
 import Accumulator
 from Crypto.Cipher import AES
 import hmac
@@ -23,6 +24,8 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
         index1 - 一个字典。key为location（bytes类型）；value为一个元组(c_fid,c_st)，c_fid为fid的密文（bytes类型），
                  c_st为逻辑指针（bytes）类型
         index2 - 一个字典。key为t_fid（bytes类型），value为该文件对应的P_fid（一个大整数）。
+        index3 - 一个字典。key为t_w(bytes类型)，value为w对应的P_w(大整数)
+        P - ADS对应的素数乘积
         ST - 一个字典。key为w（str类型），value为对应的st_c（bytes类型）
         gas - 消耗的gas
     '''
@@ -35,16 +38,19 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
     # 索引，将会发送至服务器
     index1=dict()
     index2=dict()
+    index3=dict()
 
     # 累加器
     msa=Accumulator.Accumulator(p=252533614457563255817176556954479732787,
                                 q=326896810465200637570669519551882712907,
                                 g=65537)
 
-    # ADS_w，将会发送给区块链。key为w（str类型），value为对应的Acc值（int类型）
-    ADS_w=dict()
-    # ADS_fid，将会发送给区块链。key为fid（str类型），value为对应的Acc值（int类型）
-    ADS_fid=dict()
+    # ADS，一个大整数，将发送给区块链
+    ADS=0
+    # 对应于ADS的素数乘积，将发送给区块链
+    P=0
+    # 储存所有的Acc_w和Acc_fid对应的素数
+    acc_list=set()
 
     # 一个字典，储存每个关键字对应的st。key为str类型，value为bytes类型
     ST=dict()
@@ -52,7 +58,6 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
     # 生成对称加密密钥k1,k2
     k1='XJTUOSV1'.zfill(16).encode('utf-8')
     k2='XJTUOSV2'.zfill(16).encode('utf-8')
-
 
     # 根据数据集，构造倒排索引（字典类型,Dict[str,Set[str]]）
     inv_index=dict()
@@ -63,14 +68,14 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
                 # 创建一个空集合
                 inv_index[w]=set()
             inv_index[w].add(fid)
-    
 
     # 遍历倒排索引，计算密文和Acc_w
     for w, fid_set in inv_index.items():
         # 生成w的tag
         t_w=hmac.new(key=k1,msg=w.encode('utf-8'),digestmod='sha256').digest()
-        # 素数集合X_w，保存w对应的id的素数
+        # 素数集合X_w，保存w对应的id的素数和t_w对应的素数
         X_w=set()
+        X_w.add(Accumulator.str2prime(str(t_w)))
         # 初始化st为全0的16字节bytes
         st_old=bytes(16)
 
@@ -81,7 +86,7 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
             st_new=os.urandom(16)
             # 生成location
             loc=hmac.new(key=t_w,msg=st_new,digestmod='shake128').digest()
-            # fid的密文
+            # fid的密文cfid
             c_fid=aes.encrypt(fid.zfill(16).encode('utf-8'))
             # fid的tag
             t_fid=hmac.new(key=k1,msg=fid.encode('utf-8'),digestmod='shake128').digest()
@@ -103,21 +108,24 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
 
             # 更新st_c
             st_old=st_new
-        
+
         # 更新ST
         ST[w]=st_old
 
-        # 计算X_w对应的Acc
-        Acc_w, _=msa.genAcc(X_w)
-        # 将Acc_w加入ADS
-        ADS_w[w]=Acc_w
+        # 计算X_w对应的Acc和素数乘积P_w
+        Acc_w, P_w=msa.genAcc(X_w)
+        acc_list.add(Accumulator.str2prime(str(Acc_w)))
+        # 将P_w加入index3
+        index3[t_w]=P_w
     
     # 计算每个文件对应的Acc_fid和x_p
     for fid,wset in dataset.items():
         # 计算fid的tag
         t_fid=hmac.new(key=k1,msg=fid.encode('utf-8'),digestmod='shake128').digest()
-        # 计算文件中关键字对应的素数集合
+        # X_id，储存fid对应所有w对应的素数和t_fid对应的素数
         X_id=set()
+        X_id.add(Accumulator.str2prime(str(t_fid)))
+
         for w in wset:
             x=Accumulator.str2prime(w)
             X_id.add(x)
@@ -125,81 +133,22 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
 
         # 将t_fid,P_fid加入索引
         index2[t_fid]=P_fid
-        # 将Acc_fid加入ADS
-        ADS_fid[fid]=Acc_fid
+        # 将Acc_fid加入acc_list
+        acc_list.add(Accumulator.str2prime(str(Acc_fid)))    
 
-    # 调用智能合约
-    batch_size=200
-    # 将ADS_w批量存入区块链
-    gas_w=batch_add(ADS_w, 1, batch_size,web3,contract)
-    gas_fid=batch_add(ADS_fid, 2, batch_size,web3,contract)
-    # 总的gas
-    gas=gas_w+gas_fid
-
-    # 将密钥和构建的两个索引返回
-    return k1,k2,index1,index2,ST,gas
-
-
-
-
-def batch_add(ADS:Dict[str,int], type:int, batch_size:int, web3, contract):
-    '''
-    setup阶段，调用智能合约，将生成的ADS字典分批加入区块链。可能存在一部分元素不足batch_size，最后当作一个batch处理。
-    input:
-        ADS_w -  setup阶段生成的字典，key为w或fid，value为对应的Acc
-        type - 若type==1，字典的key为w；若type==2，字典的key为w
-        batch_size - 每个batch的大小
-        web3 - Web3对象
-        contract - 合约对象
-    output:
-        gas - 花费的gas
-    '''
-    # 计算ADS的size
-    total_size=len(ADS)
-
-    # 计算要分多少个batch
-    math.ceil(total_size/batch_size)
-
-    # 将数据按照batch_size分组
-    # 剩余未被处理的k-v pair数
-    remain_size=total_size
-    # 消耗的gas
-    gas=0
-    while remain_size>0:
-        # 当前批次的大小
-        current_size=0
-        if remain_size>=batch_size:
-            current_size=batch_size
-        else:
-            current_size=remain_size
-        
-        # 将current_size大小的数据从ADS中取出，并转换为两个list，分别储存key和value
-        # 从ADS中取出current_size个k-v pair
-        k_list=random.sample(list(ADS.keys()),current_size)
-        v_list=[ADS[k] for k in k_list]
-        # 从ADS中删除这些数据
-        for k in k_list:
-            ADS.pop(k)
-        
-        # 调用智能合约，将两个list发送至合约，从而设置合约中的mapping
-        # 首先将两个list中的元素转换为ABI要求的数据类型
-        _k_list=[Web3.toBytes(text=k.zfill(16)) for k in k_list]
-        _v_list=[Web3.toBytes(int(v)) for v in v_list]
-        # 调用合约，并await，得到gas消耗
-        # 通过type参数指定存入合约的哪个mapping
-        tx_hash=contract.functions.batch_setADS(_k_list, _v_list, current_size, type).transact({
+    # 对Acc_list，计算对应的素数乘积和Acc
+    ADS, P=msa.genAcc(acc_list)
+    
+    # 调用智能合约，储存ADS和P。获取消耗的Gas
+    tx_hash=contract.functions.set(Web3.toBytes(ADS), Web3.toBytes(P)).transact({
             'from':web3.eth.accounts[0], 
             'gasPrice': web3.eth.gasPrice, 
             'gas': web3.eth.getBlock('latest').gasLimit})
-        tx_receipt = web3.eth.get_transaction_receipt(tx_hash)
-        gas += tx_receipt['gasUsed']
+    tx_receipt = web3.eth.get_transaction_receipt(tx_hash)
+    gas = tx_receipt['gasUsed']
 
-        # 更新剩余数量
-        remain_size=remain_size-current_size
-
-    return gas
-
-
+    # 返回参数
+    return k1,k2,index1,index2,index3,P,ST,gas
 
 
 def search(Q:Set[str],ST:Dict[str,int], k1:bytes):
@@ -215,7 +164,7 @@ def search(Q:Set[str],ST:Dict[str,int], k1:bytes):
         P_Q - Q中所有关键字对应素数的乘积
         st - w对应的st
     '''
-
+    
     # 从Q中任选一个关键字作为w
     w=random.choice(list(Q))
     # 计算t_w
@@ -230,15 +179,21 @@ def search(Q:Set[str],ST:Dict[str,int], k1:bytes):
     return w, t_w,P_Q,ST[w]
 
 
-
-
-def verify(w:str, P_Q:int, result:Set[Tuple[bytes,Any,int]], web3, contract, k2:bytes):
+def verify(w:str, P_Q:int, correctness_proof:Set[Tuple], pi4:int, web3, contract, k2:bytes):
     '''
     验证服务器返回的查询结果。
     input:
         w - 用户此前从Q中选定的关键字
-        P_Q - Q中所有关键字对应素数的乘积
-        result - 服务器返回的查询结果
+        P_Q - Q中所有 关键字对应素数的乘积
+        correctness_proof - 服务器返回的正确性证明，元素为元组类型(Acc_fid, c_fid,pi1,pi2,pi3,type[,p])。
+                            Acc_fid为该文件的Acc
+                            c_fid为密文。
+                            pi1为该文件关于Acc_id的存在证明/不存在证明;
+                            pi2为t_id关于Acc_id的存在证明；
+                            pi3为Acc_id关于ADS的存在证明；
+                            type标识pi1的类型：若是存在证明，type==1; 若是不存在证明，type==0。当是不存在证明时，额外返回p，即
+                            p=P_Q/gcd(P_fid,P_Q)
+        pi4 - 用于证明Acc_w属于ADS
         web3 - web3对象
         contract - 合约对象
         k2 - 密钥k2
@@ -248,67 +203,79 @@ def verify(w:str, P_Q:int, result:Set[Tuple[bytes,Any,int]], web3, contract, k2:
     '''
 
     # 解密密钥
+    k1='XJTUOSV1'.zfill(16).encode('utf-8')
     k2='XJTUOSV2'.zfill(16).encode('utf-8')
     aes=AES.new(key=k2,mode=AES.MODE_ECB)
     # 累加器
     msa=Accumulator.Accumulator(p=252533614457563255817176556954479732787,
                                 q=326896810465200637570669519551882712907,
                                 g=65537)
-    
-    # X_w储存w对应的fid的素数
+
+    # X_w储存w对应的fid的素数和t_w对应的素数
     X_w=set()
+    t_w=hmac.new(key=k1,msg=w.encode('utf-8'),digestmod='sha256').digest()
+    X_w.add(Accumulator.str2prime(str(t_w)))
     # 储存匹配查询条件的fid
     R=set()
 
+    # 从区块链取回ADS
+    ADS_bytes = contract.functions.get().call()
+    ADS=Web3.toInt(ADS_bytes[0])
+    
     # 对w对应的链进行解密，得到fid和t_fid
-    for tup in result:
-        c_fid=tup[0]
-        pi=tup[1]
-        type=tup[2]
-        # 解密c_fid，得到fid的16字节形式
+    for tup in correctness_proof:
+        Acc_fid=tup[0]
+        c_fid=tup[1]
+        pi1=tup[2]
+        pi2=tup[3]
+        pi3=tup[4]
+        type=tup[5]
+
+        # 解密得到fid，并计算t_fid
         fid_bytes=aes.decrypt(c_fid).decode('utf-8')
         # 去掉填充，得到fid的字符串形式
         fid=fid_bytes.lstrip('0')
+        t_fid=hmac.new(key=k1,msg=fid.encode('utf-8'),digestmod='shake128').digest()
 
-        # 从区块链中读取Acc_fid的字节形式，并转换为大整数
-        Acc_fid_bytes=contract.functions.getADS(Web3.toBytes(text=fid.zfill(16)), 2).call()
-        Acc_fid=Web3.toInt(Acc_fid_bytes)
+        # 验证t_fid是否正确：
+        # 使用pi2验证t_fid属于Acc_fid
+        msa.verify_membership(pi2, Acc_fid, Accumulator.str2prime(str(t_fid)))
+        # 使用pi3验证Acc_fid属于ADS
+        msa.verify_membership(pi3, ADS, Accumulator.str2prime(str(Acc_fid)))
 
-        # 验证
+        # 验证fid中的关键字是否属于Acc_fid
         if type==0:
             # 取出p=P_Q/gcd(P_fid,P_Q)
-            p=tup[3]
-
+            p=tup[6]
             # 验证不匹配P_Q
-            if (P_Q%p!=0) or (not msa.verify_non_membership(pi[0],pi[1],Acc_fid,p)):
+            if (P_Q%p!=0) or (not msa.verify_non_membership(pi1[0], pi1[1], Acc_fid, p)):
                 print("correctness verification failed")
                 return False,R
             else:
                 X_w.add(Accumulator.str2prime(fid))
         elif type==1:
             # 验证P_Q存在
-            if not msa.verify_membership(pi,Acc_fid,P_Q):
+            if not msa.verify_membership(pi1, Acc_fid, P_Q):
                 print("correctness verification failed")
                 return False,R
             else:
                 X_w.add(Accumulator.str2prime(fid))
                 R.add(fid)
-
+    
     # 验证完整性
-    # 从区块链中读取Acc_w的字节形式，
-    Acc_w_bytes=contract.functions.getADS(Web3.toBytes(text=w.zfill(16)), 1).call()
-    Acc_w=Web3.toInt(Acc_w_bytes)
-
-    # 根据X_w计算Acc，并于Acc_w对比，判断是否相等
-    Acc,_=msa.genAcc(X_w)
-    if Acc!=Acc_w:
+    # 根据X_w计算Acc_w
+    Acc_w, _ = msa.genAcc(X_w)
+    # 验证Acc_w是否属于ADS
+    if not msa.verify_membership(pi4, ADS, Accumulator.str2prime(str(Acc_w))):
         print("completeness verification failed")
         return False, R
-
+    
     return True, R
 
 
-def update(ST:Dict[str,bytes], op:str, w:str, fid:str, index2:Dict[bytes,int], web3, contract):
+
+def update(ST:Dict[str,bytes], op:str, w:str, fid:str, index2:Dict[bytes,int], index3:Dict[bytes,int],
+           web3, contract):
     '''
     根据操作类型op对外包数据进行更新
     input:
@@ -317,29 +284,35 @@ def update(ST:Dict[str,bytes], op:str, w:str, fid:str, index2:Dict[bytes,int], w
         w - 要插入的关键字。str类型。
         fid - w对应的fid。str类型
         index2 - 一个字典。key为t_fid（bytes类型），value为该文件对应的P_fid（一个大整数）。
+        index3 - 一个字典。key为t_w(bytes类型)，value为w对应的P_w(大整数)。
     output:
-        若op==add，返回一个元组：((loc,c_fid,c_st),(t_fid,P_fid))
+        若op==add，返回一个元组：((loc,c_fid,c_st), (t_fid,P_fid_new), (t_w,P_w_new), P_new)
         若op==del，返回一个元组：(t_fid,P_fid)
+    note:
+        这里省略了对服务器返回的P_w,P_fid,Acc_w,Acc_fid验证的过程。
     '''
     # 根据op类型调用相应接口
     if op=='add':
-        return update_add(ST, w, fid, index2, web3, contract)
+        return update_add(ST, w, fid, index2, index3, web3, contract)
     elif op=='del':
-        return update_del(w,fid,index2,web3,contract)
+        return update_del(w, fid, index2, index3, web3, contract)
 
 
 
-def update_add(ST:Dict[str,bytes], w:str, fid:str, index2:Dict[bytes,int], web3, contract):
+def update_add(ST:Dict[str,bytes], w:str, fid:str, index2:Dict[bytes,int], index3:Dict[bytes,int], web3, contract):
     '''
-    将(w,id)加入数据库
+    将(w,id)加入数据库。
     input:
         ST - 一个字典，储存每个关键字的st。key为w（str类型），value为对应的st_c（bytes类型）
         w - 要插入的关键字。str类型。
         fid - w对应的fid。str类型
-        index2 - 一个字典。key为t_fid（bytes类型），value为该文件对应的P_fid（一个大整数）。
+        index2 - 用于获取P_fid。若fid尚不存在，设置P_fid_old=1
+        index3 - 用于获取P_w。若w尚不存在，设置P_w_old=1
     output:
         (loc,c_fid,c_st) - loc为储存位置，c_fid为fid的密文（bytes类型），c_st为逻辑指针（bytes）类型
-        (t_fid,P_fid) - t_fid为fid的tag，P_fid为对应的素数乘积
+        (t_fid,P_fid_new) - t_fid为fid的tag，P_fid为fid对应的新素数乘积。
+        (t_w,P_w_new) - t_w为w的tag，P_w为w对应的新素数乘积
+        P_new - 对应于ADS的新素数乘积
     '''
 
     # 累加器
@@ -356,18 +329,37 @@ def update_add(ST:Dict[str,bytes], w:str, fid:str, index2:Dict[bytes,int], web3,
     t_w=hmac.new(key=k1,msg=w.encode('utf-8'),digestmod='sha256').digest()
     # fid的tag
     t_fid=hmac.new(key=k1,msg=fid.encode('utf-8'),digestmod='shake128').digest()
-    # 取出P_fid
-    if t_fid not in index2:
-        P_fid=1
-    else:
-        P_fid=index2[t_fid]
+
+    # 从index2中读取P_fid。若fid尚不存在，设置P_fid_old=1
+    P_fid_old=1
+    if t_fid in index2:
+        P_fid_old=index2[t_fid]
+    # 从index3中读取P_w。若w尚不存在，设置P_w_old=1
+    P_w_old=1
+    if t_w in index3:
+        P_w_old=index3[t_w]
+    
+
+
+    # 计算旧的Acc_w和Acc_fid
+    Acc_w_old=msa.genAcc2(P_w_old)
+    Acc_fid_old=msa.genAcc2(P_fid_old)
+
+
+    # 从区块链中读取ADS和P
+    l_bytes = contract.functions.get().call()
+    ADS_old=Web3.toInt(l_bytes[0])
+    P_old=Web3.toInt(l_bytes[1])
+    
+
+
 
     # 获取w对应的旧的st
     # 若数据库中尚不存在w，则在ST中创建新条目
     st_old=bytes(16)
     if w in ST:
         st_old=ST[w]
-
+    
     # 为(w,id)生成新的st
     st_new=os.urandom(16)
 
@@ -376,7 +368,6 @@ def update_add(ST:Dict[str,bytes], w:str, fid:str, index2:Dict[bytes,int], web3,
     # fid的密文
     c_fid=aes.encrypt(fid.zfill(16).encode('utf-8'))
     
-
     # 生成c_st
     # H(t_w,st_new)
     part1=hmac.new(key=t_w, msg=st_new, digestmod='sha256').digest()
@@ -385,53 +376,70 @@ def update_add(ST:Dict[str,bytes], w:str, fid:str, index2:Dict[bytes,int], web3,
     # 异或
     c_st=bytes(a^b for a,b in zip(part1,part2))
 
-    # 从区块链中取回Acc_w和Acc_fid
-    # 对于边界条件，若w或fid还不存在于数据库，则不需要访问区块链
-    g=65537
-    Acc_w=g
-    Acc_fid=g
-    if w in ST:
-        Acc_w_bytes=contract.functions.getADS(Web3.toBytes(text=w.zfill(16)), 1).call()
-        Acc_w=Web3.toInt(Acc_w_bytes)
-    if fid in index2:
-        Acc_fid_bytes=contract.functions.getADS(Web3.toBytes(text=fid.zfill(16)), 2).call()
-        Acc_fid=Web3.toInt(Acc_fid_bytes)
 
-    #  更新Acc_w和Acc_fid
-    Acc_w=msa.add_element(Acc_w, Accumulator.str2prime(fid))
-    Acc_fid=msa.add_element(Acc_fid, Accumulator.str2prime(w))
+    # 更新P_fid，并计算Acc_fid
+    # 若不存在t_fid对应的条目，则需要新建P_fid    
+    P_fid_new=P_fid_old*Accumulator.str2prime(w)
+    if P_fid_old==1:
+        P_fid_new=P_fid_new*Accumulator.str2prime(str(t_fid))
+    Acc_fid_new=msa.genAcc2(P_fid_new)
 
-    # 更新P_fid
-    P_fid=P_fid*Accumulator.str2prime(w)
+    # 更新P_w，并计算Acc_w
+    # 若不存在t_w对应的条目，则需要新建P_w
+    P_w_new=P_w_old*Accumulator.str2prime(fid)
+    if P_w_old==1:
+        P_w_new=P_w_new*Accumulator.str2prime(str(t_w))
+    Acc_w_new=msa.genAcc2(P_w_new)
 
-    # 调用智能合约，更新区块链状态
-    contract.functions.setADS(Web3.toBytes(text=w.zfill(16)), Web3.toBytes(Acc_w), 1).transact({
+
+    # 更新P
+    # 先将P除去(H_p(Acc_w_old)*H_p(Acc_fid_old))，要求P_w_old和P_fid_old不为1
+    a=1
+    if P_w_old!=1:
+        a=Accumulator.str2prime(str(Acc_w_old))
+    b=1
+    if P_fid_old!=1:
+        b=Accumulator.str2prime(str(Acc_fid_old))
+
+    P_new=P_old // (a*b)
+
+    # 乘以(H_p(Acc_w_new)*H_p(Acc_fid_new))
+    P_new=P_new*(Accumulator.str2prime(str(Acc_w_new)) * Accumulator.str2prime(str(Acc_fid_new)))
+
+    # 更新ADS，并将ADS,P都发送到区块链
+    ADS=msa.genAcc2(P_new)
+    tx_hash=contract.functions.set(Web3.toBytes(ADS), Web3.toBytes(P_new)).transact({
             'from':web3.eth.accounts[0], 
             'gasPrice': web3.eth.gasPrice, 
             'gas': web3.eth.getBlock('latest').gasLimit})
-    contract.functions.setADS(Web3.toBytes(text=fid.zfill(16)), Web3.toBytes(Acc_fid),2).transact({
-            'from':web3.eth.accounts[0], 
-            'gasPrice': web3.eth.gasPrice, 
-            'gas': web3.eth.getBlock('latest').gasLimit})
+    tx_receipt = web3.eth.get_transaction_receipt(tx_hash)
+    gas = tx_receipt['gasUsed']
 
     # 更新ST
     ST[w]=st_new
 
-    # 返回对索引的更新
-    return (loc, c_fid, c_st), (t_fid, P_fid)
+    # 返回对server索引的更新
+    return (loc, c_fid, c_st), (t_fid, P_fid_new), (t_w, P_w_new), P_new
 
 
 
-def update_del(w:str, fid:str, index2:Dict[bytes,int], web3, contract):
+
+
+
+
+def update_del(w:str, fid:str, index2:Dict[bytes,int], index3:Dict[bytes,int], web3, contract):
     '''
-    将(w,id)从数据库中删除
+    将(w,id)从数据库中删除。
     input:
         w - 要删除的关键字。str类型。
         fid - w对应的fid。str类型
-        index2 - 一个字典。key为t_fid（bytes类型），value为该文件对应的P_fid（一个大整数）。
+        index2 - 用于获取P_fid。若fid尚不存在，设置P_fid_old=1
+        index3 - 用于获取P_w。若w尚不存在，设置P_w_old=1
     output:
-        (t_fid,P_fid) - t_fid为fid的tag，P_fid为对应的素数乘积
+        (t_fid,P_fid_new) - t_fid为fid的tag，P_fid为fid对应的新素数乘积。
+        P_new - 对应于ADS的新素数乘积
     '''
+
     # 累加器
     msa=Accumulator.Accumulator(p=252533614457563255817176556954479732787,
                                 q=326896810465200637570669519551882712907,
@@ -440,26 +448,36 @@ def update_del(w:str, fid:str, index2:Dict[bytes,int], web3, contract):
     k1='XJTUOSV1'.zfill(16).encode('utf-8')
     k2='XJTUOSV2'.zfill(16).encode('utf-8')
 
-    # 取出P_fid
+    # 从区块链中读取ADS和P
+    l_bytes = contract.functions.get().call()
+    ADS_old=Web3.toInt(l_bytes[0])
+    P_old=Web3.toInt(l_bytes[1])
+
+
+    # fid的tag
     t_fid=hmac.new(key=k1,msg=fid.encode('utf-8'),digestmod='shake128').digest()
-    P_fid=index2[t_fid]
+    # 从index2中读取P_fid
+    P_fid_old=index2[t_fid]
+    # 计算旧的Acc_fid
+    Acc_fid_old=msa.genAcc2(P_fid_old)
 
-    # 计算w对应的素数
-    x=Accumulator.str2prime(w)
+    # 计算新的P_fid
+    P_fid_new=P_fid_old // Accumulator.str2prime(w)
+    # 计算新的Acc_fid
+    Acc_fid_new=msa.genAcc2(P_fid_new)
 
-    # 更新 P_fid
-    P_fid=P_fid // x
+    # 更新P
+    P_new = P_old * Accumulator.str2prime(str(Acc_fid_new)) // Accumulator.str2prime(str(Acc_fid_old))
+    # 更新ADS
+    ADS=msa.genAcc2(P_new)
 
-    # 从区块链取回Acc_fid并更新
-    Acc_fid_bytes=contract.functions.getADS(Web3.toBytes(text=fid.zfill(16)), 2).call()
-    Acc_fid=Web3.toInt(Acc_fid_bytes)
-    Acc_fid=msa.del_element(Acc_fid, x)
-
-    # 调用智能合约，更新区块链状态
-    contract.functions.setADS(Web3.toBytes(text=fid.zfill(16)), Web3.toBytes(Acc_fid),2).transact({
+    # 将ADS,P都发送到区块链
+    tx_hash=contract.functions.set(Web3.toBytes(ADS), Web3.toBytes(P_new)).transact({
             'from':web3.eth.accounts[0], 
             'gasPrice': web3.eth.gasPrice, 
             'gas': web3.eth.getBlock('latest').gasLimit})
+    tx_receipt = web3.eth.get_transaction_receipt(tx_hash)
+    gas = tx_receipt['gasUsed']
 
-    # 返回新的P_fid    
-    return (t_fid, P_fid)
+    # 返回
+    return (t_fid, P_fid_new), P_new

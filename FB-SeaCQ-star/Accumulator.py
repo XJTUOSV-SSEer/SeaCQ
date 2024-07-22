@@ -155,7 +155,7 @@ class Accumulator:
         input:
             pi - 证明
             acc - acc值
-            x - 要验证存在的元素，字符串形式
+            x - 要验证存在的元素，一个素数
         output:
             flag - 若为True，验证通过；若为False，验证未通过，说明proof是伪造的
         '''

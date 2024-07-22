@@ -7,7 +7,7 @@ contract ADS {
     // 定义存储ACC_fid的 mapping
     mapping(bytes16 => bytes) public dict_fid;
 
-    // bytes数组，第一个元素为ACC_ADS，第二个元素为ACC_P
+    // bytes数组，第一个元素为ADS，第二个元素为P
     bytes[2] public total_ADS;
 
 

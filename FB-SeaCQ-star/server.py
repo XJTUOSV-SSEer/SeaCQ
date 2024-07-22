@@ -1,7 +1,8 @@
+from pickletools import UP_TO_NEWLINE
 import Accumulator
 from Crypto.Cipher import AES
 import hmac
-from typing import Dict,Set,Tuple, type_check_only
+from typing import Dict,Set,Tuple
 from web3 import Web3
 import json
 import numbthy
@@ -21,14 +22,15 @@ def search(t_w:bytes, P_Q, st, index1:Dict[bytes,Tuple[bytes,bytes]], index2:Dic
         index3 - 索引3，一个字典。key为t_w（bytes），value为w对应的P_w(一个大整数)
         P - ADS对应的素数乘积
     output:
-        correctness_proof - 查询结果及正确性证明。一个集合，其中元素为元组类型(Acc_fid, c_fid,pi1,pi2,pi3,type[,p])。c_fid为密文。
+        correctness_proof - 查询结果及正确性证明。一个集合，其中元素为元组类型(Acc_fid, c_fid,pi1,pi2,pi3,type[,p])。
                  Acc_fid为该文件的Acc
+                 c_fid为密文。
                  pi1为该文件关于Acc_id的存在证明/不存在证明;
                  pi2为t_id关于Acc_id的存在证明；
                  pi3为Acc_id关于ADS的存在证明；
                  type标识pi1的类型：若是存在证明，type==1; 若是不存在证明，type==0。当是不存在证明时，额外返回p，即
                  p=P_Q/gcd(P_fid,P_Q)
-        completeness_proof - 完整性证明pi4，Acc_w关于ADS的存在证明。
+        pi4 - 完整性证明pi4，Acc_w关于ADS的存在证明。
     '''
 
     # 正确性证明
@@ -60,7 +62,7 @@ def search(t_w:bytes, P_Q, st, index1:Dict[bytes,Tuple[bytes,bytes]], index2:Dic
         Acc_fid=msa.genAcc2(P_fid)
         # 生成证明pi2，证明t_fid属于Acc_fid
         pi2 = msa.prove_membership(Accumulator.str2prime(str(t_fid)), P_fid)
-        # 生成证明pi1，证明Acc_fid属于ADS
+        # 生成证明pi3，证明Acc_fid属于ADS
         pi3 = msa.prove_membership(Accumulator.str2prime(str(Acc_fid)), P)
 
         # 判断P_fid能否整除P_Q
@@ -73,5 +75,72 @@ def search(t_w:bytes, P_Q, st, index1:Dict[bytes,Tuple[bytes,bytes]], index2:Dic
 
             # 将密文与证明加入结果
             t=(Acc_fid, c_fid, pi1, pi2, pi3, type)
+            correctness_proof.add(t)
         else:
-            
+            # 求解P_fid和P_Q的最大公约数
+            gcd=numbthy.gcd(P_fid,P_Q)
+
+            # P_Q / gcd
+            p=P_Q//gcd
+
+            # 该文件不匹配Q，生成不存在证明
+            pi1=msa.prove_non_membership(p,P_fid)
+            type=0
+
+            # 将密文与证明加入结果
+            t=(Acc_fid, c_fid, pi1, pi2, pi3, type, p)
+            correctness_proof.add(t)
+        # 更新st_new
+        st_new=st_old
+
+    # 生成完整性证明，证明Acc_w属于ADS
+    # 首先根据p_w计算Acc_w
+    P_w=index3[t_w]
+    Acc_w=msa.genAcc2(P_w)
+    pi4=msa.prove_membership(Accumulator.str2prime(str(Acc_w)), P)
+
+    # 返回
+    return correctness_proof, pi4
+
+
+
+def update(op:str, updtk: Tuple, index1:Dict[bytes,Tuple[bytes,bytes]], index2:Dict[bytes,int], index3:Dict[bytes,int]):
+    '''
+    根据op类型和owner返回的update token，对储存的索引进行更新
+    input:
+        op - 操作类型。一个字符串，'add'或'del'
+        tpdtk - 若op==add，元组为((loc,c_fid,c_st), (t_fid,P_fid_new), (t_w, P_w_new), P_new)；
+                若op==del，元组为((t_fid,P_fid),P)
+        index1 - 索引1，一个字典。key为location（bytes类型）；value为一个元组(c_fid,c_st)，c_fid为fid的密文（bytes类型），
+                 c_st为fid的st（bytes类型）
+        index2 - 索引2，一个字典。key为t_fid（bytes类型），value为该文件对应的P_fid（一个大整数）。
+        index3 - 索引3，一个字典。key为t_w（bytes），value为w对应的P_w(一个大整数)
+    output:
+        P - 更新后的P
+    '''
+    P=None
+    if op == 'add':
+        # 更新index1
+        loc=updtk[0][0]
+        c_fid=updtk[0][1]
+        c_st=updtk[0][2]
+        index1[loc]=(c_fid, c_st)
+        # 更新index2
+        t_fid=updtk[1][0]
+        P_fid=updtk[1][1]
+        index2[t_fid]=P_fid
+        # 更新index3
+        t_w=updtk[2][0]
+        P_w=updtk[2][1]
+        index3[t_w]=P_w
+        # 更新后的P
+        P=updtk[3]
+    elif op=='del':
+        # 更新index2
+        t_fid=updtk[0][0]
+        P_fid=updtk[0][1]
+        index2[t_fid]=P_fid
+        # 更新P
+        P=updtk[1]
+    
+    return P

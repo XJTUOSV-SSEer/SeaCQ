@@ -102,7 +102,7 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
         ADS_fid[fid]=Acc_fid
     
     # 调用智能合约
-    batch_size=1
+    batch_size=500
     # 将ADS_w批量存入区块链
     gas_w=batch_add(ADS_w, 1, batch_size,web3,contract)
     gas_fid=batch_add(ADS_fid, 2, batch_size,web3,contract)

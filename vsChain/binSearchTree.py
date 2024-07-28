@@ -1,6 +1,3 @@
-from os import path
-from re import L
-from turtle import update
 from typing import Dict,Set,Tuple,Any, Optional, List
 from web3 import Web3
 import hmac
@@ -179,7 +176,7 @@ class binSearchTree:
             tree - 这里的tree包含刚被更新的结点和更新前已在tree中的结点。更新时没有修改相关节点的
                    lhash和rhash
             upd_ids - 被更新的id的列表
-            proof - 证明。本质上是一棵子树，对应upd_ids中结点的merkle proof，即所有被更新结点的路径，
+            proof - merkle证明。本质上是一棵子树，对应upd_ids中结点的merkle proof，即所有被更新结点的路径，
                     但返回的子树中不包括upd_ids中的结点。
             ptr - 当前结点在tree数组中的下标
         output:
@@ -270,3 +267,103 @@ class binSearchTree:
         hash = bytes( Web3.keccak( str(node.id).encode('utf-8') + lhash + rhash) )
 
         return hash
+    
+
+
+    @staticmethod
+    def find_min_id(tree:List['binSearchTree'], ptr:int):
+        '''
+        找到树中最小的id，并返回对应结点在数组中的下标
+        input:
+            tree - 
+            ptr - 当前结点在数组中的下标
+        output:
+            ptr - 最小结点在数组中的下标
+        '''
+
+        # 递归边界
+        if tree[ptr].lchild is None:
+            return ptr
+        
+        ptr = tree[ptr].lchild
+        return binSearchTree.find_min_id(tree, ptr)
+    
+
+
+
+    @staticmethod
+    def merkle_prove(tree:List['binSearchTree'], proof:List['binSearchTree'], node_set:Set[int], ptr:int, 
+                     index_map:Dict[int, int]):
+        '''
+        给定一组结点，为其作merkle prove，并计算原树结点与merkle子树结点间的index映射关系
+        input:
+            tree - 
+            proof - merkle子树
+            node_set - 要prove的结点在tree中的index集合
+            ptr - 当前结点在tree中的index
+            index_map - 映射表，将同一结点在tree中的index映射到在proof中的index
+        output:
+            is_on_path - 若当前node在更新路径上，则为true；否则为false
+            ptr_new - 若当前node处生成了一个结点加入proof，则返回proof中的下标
+        '''
+
+        # 每个结点三种情况：
+        # (1) 左/右结点在更新路径上，则该结点也在更新路径上，将该结点作为内部结点加入merkle proof
+        # (2) 不符合(1)，但是在node_set中，则该结点在更新路径上，将该结点作为叶结点加入merkle proof
+        # (3) 不符合(1),(2)，则该结点不在更新路径上，直接返回
+
+        # 递归边界，判断ptr是否为None
+        if ptr is None:
+            return False, None
+
+        
+        # 递归的获取左，右子结点的证明
+        lchild_is_on_path, ptr_new_l = binSearchTree.merkle_prove(tree, proof, node_set, tree[ptr].lchild)
+        rchild_is_on_path, ptr_new_r = binSearchTree.merkle_prove(tree, proof, node_set, tree[ptr].rchild)
+
+        # 判断结点属于哪种情况
+        # 情况(1)
+        if lchild_is_on_path or rchild_is_on_path:
+            # 创建新结点
+            new_node=binSearchTree()
+            new_node.id = tree[ptr].id
+            new_node.path = tree[ptr].path
+            # 判断左子结点
+            if lchild_is_on_path:
+                new_node.lchild = ptr_new_l
+            else:
+                new_node.lhash = tree[ptr].lhash
+            # 判断右子结点
+            if rchild_is_on_path:
+                new_node.rchild = ptr_new_r
+            else:
+                new_node.rhash = tree[ptr].rhash
+            
+            # 将结点加入proof
+            proof.append(new_node)
+
+            # 更新映射关系
+            index_map[ptr] = len(proof)-1
+
+            return True, len(proof)-1
+        
+        # 情况(2)
+        elif ptr in node_set:
+            # 创建新结点
+            new_node=binSearchTree()
+            new_node.id = tree[ptr].id
+            new_node.path = tree[ptr].path
+            new_node.lhash = tree[ptr].lhash
+            new_node.rhash = tree[ptr].rhash
+
+            # 将结点加入proof
+            proof.append(new_node)
+
+            # 更新映射关系
+            index_map[ptr] = len(proof)-1
+
+            return True, len(proof)-1
+        
+        # 情况(3)
+        else:
+            return False, None

@@ -139,3 +139,9 @@ class onwer:
         return k, v
 
 
+
+
+    def verify(self):
+        '''
+        用户验证服务器返回的查询结果，并得到结果
+        '''

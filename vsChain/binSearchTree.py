@@ -69,7 +69,7 @@ class binSearchTree:
             root.lhash=lhash
 
             # 递归求解右子树
-            rchild, rhash = binSearchTree.construct_tree(e_list, mid+1, rb, root.path, '1')
+            rchild, rhash = binSearchTree.construct_tree(tree, e_list, mid+1, rb, root.path, '1')
             root.rchild = rchild
             root.rhash = rhash
 
@@ -109,7 +109,7 @@ class binSearchTree:
         # 取出v，并得到id
         v=CMAP[k]
         tmp=hmac.new(key=k_w, msg=current_path.encode('utf-8'), digestmod='sha256').digest()
-        id = int(str(bytes(a ^ b for a, b in zip(v, tmp))).lstrip('0'))
+        id = int( bytes(a ^ b for a, b in zip(v, tmp)).decode('utf-8').lstrip('0') )
 
         # 构造结点
         node = binSearchTree()
@@ -153,7 +153,7 @@ class binSearchTree:
         # 插入节点
         new_node=binSearchTree()
         new_node.id=id
-        if id < tree[pre]:
+        if id < tree[pre].id:
             new_node.path=tree[pre].path+'0'
             tree[pre].lchild = len(tree)
         else:
@@ -318,8 +318,8 @@ class binSearchTree:
 
         
         # 递归的获取左，右子结点的证明
-        lchild_is_on_path, ptr_new_l = binSearchTree.merkle_prove(tree, proof, node_set, tree[ptr].lchild)
-        rchild_is_on_path, ptr_new_r = binSearchTree.merkle_prove(tree, proof, node_set, tree[ptr].rchild)
+        lchild_is_on_path, ptr_new_l = binSearchTree.merkle_prove(tree, proof, node_set, tree[ptr].lchild, index_map)
+        rchild_is_on_path, ptr_new_r = binSearchTree.merkle_prove(tree, proof, node_set, tree[ptr].rchild, index_map)
 
         # 判断结点属于哪种情况
         # 情况(1)
@@ -367,3 +367,54 @@ class binSearchTree:
         # 情况(3)
         else:
             return False, None
+    
+
+    @staticmethod
+    def is_neighbor(tree:List['binSearchTree'], lb:int, ub:int):
+        '''
+        判断所给lb和ub是否在树中中序遍历相邻，即中序遍历序列中两个元素相邻
+        input:
+            lb - 结点在tree中的下标
+            ub - 
+        output:
+            flag - 若相邻，返回true
+        '''
+
+        # 首先判断lb是否存在右子结点。若存在，在右子结点对应的子树中搜索
+
+        # 若恶意服务器没有在proof中包含右子结点，而是给出了rhash，则存在欺骗行为
+        # 因为若lb包括右子结点，则ub必定在右子结点对应的子树中，必定有一部分在proof中
+        if (tree[lb].rhash != bytes(32)) and (tree[lb].rchild is None):
+            return False
+        
+        if tree[lb].rchild is not None:
+            # 找到右子结点对应子树的min id
+            ptr = binSearchTree.find_min_id(tree, tree[lb].rchild)
+            # 判断是否与ub相等
+            if ptr!=ub:
+                return False
+            
+        else:
+            # 根据路径推断ub。对lb的路径，找到最后一个0，并将这个0以及之后的字串截取掉，即可得到ub的路径
+            # 例如，假设lb=00001001，则ub=000010
+            lb_path = tree[lb].path
+            if lb_path.rfind('0') == -1:
+                return False
+
+            ub_path = lb_path[0:lb_path.rfind('0')]
+            # 找到ub_path对应结点在tree中的下标ptr
+            ptr = len(tree)-1
+            i = 1       # 标识当前搜索到ub_path的第几位
+            while i< len(ub_path):
+                if ub_path[i] == '0':
+                    ptr = tree[ptr].lchild
+                elif ub_path[i] == '1':
+                    ptr = tree[ptr].rchild
+                
+                i += 1
+            
+            # 若ub_path对应结点不等于ub，返回false
+            if ptr != ub:
+                return False
+        
+        return True

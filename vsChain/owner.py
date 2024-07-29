@@ -4,7 +4,8 @@ import hmac
 from typing import Dict,Set,Tuple,Any, List
 import random
 import binSearchTree
-
+import round
+import re
 
 
 class onwer:
@@ -120,7 +121,7 @@ class onwer:
         k = hmac.new(key=tau_w_upd, msg = str(beta).encode('utf-8'), digestmod='sha256').digest()
         # v=f(k_w_upd, beta) xor id，id填充为32字节
         tmp = hmac.new(key=k_w_upd, msg=str(beta).encode('utf-8'), digestmod='sha256').digest()
-        v = bytes(a ^ b for a, b in zip(tmp, str(id).zfill(32).encode(32)))
+        v = bytes(a ^ b for a, b in zip(tmp, str(id).zfill(32).encode('utf-8')))
 
         ######################### 更新H_w_upd ############################
         # 使用keccak256计算id的哈希值，然后与旧的H_w_upd异或
@@ -139,9 +140,142 @@ class onwer:
         return k, v
 
 
+    def gen_token(self, Q:Set[str]):
+        '''
+        生成查询token。为Q中的关键字，生成四元组 (tau_w, k_w, tau_w_upd, k_w_upd)
+        '''
+        # token
+        token:Set[Tuple[bytes, bytes, bytes, bytes]] = set()
+
+        for w in Q:
+            alpha, beta, _, _ =self.DMAP[w]
+            # tau_w
+            tau_w=hmac.new(key=self.k1, msg= (w.zfill(16)+str(0).zfill(16)).encode('utf-8'), digestmod='sha256').digest()
+            # k_w
+            k_w=hmac.new(key=self.k2, msg= (w.zfill(16)+str(0).zfill(16)).encode('utf-8'), digestmod='sha256').digest()
+            # tau_w_upd
+            tau_w_upd = hmac.new(key=self.k1, msg= (w.zfill(16)+str(alpha).zfill(16)).encode('utf-8'), digestmod='sha256').digest()
+            # k_w_upd
+            k_w_upd = hmac.new(key=self.k2, msg= (w.zfill(16)+str(alpha).zfill(16)).encode('utf-8'), digestmod='sha256').digest()
+
+            token.add((tau_w, k_w, tau_w_upd, k_w_upd))
+        
+        return token
+
+            
 
 
-    def verify(self):
+
+
+
+
+    def verify(self, round_list:List[round.round], merkle_proof:Dict[bytes, List[binSearchTree.binSearchTree]]):
         '''
         用户验证服务器返回的查询结果，并得到结果
         '''
+
+        # 储存查询结果，若干个id
+        result:Set[int] = set()
+
+
+        ###################### 验证每个轮次 ################################
+        # 包括几个check point：
+        # (1)第一轮的target必须是target_tau_w对应树的left most结点
+        # (2)每一轮中，每棵树的lb和ub必须是相邻的，且lb.id<= target_id <= ub.id
+        # (3)每一轮的target_id必须是前一轮所有ub.id中最大的
+        # (4)最后一轮，必须存在某棵树的lb为right most结点，ub为None
+
+        # round_order为r在round_list中的下标
+        for round_order, r in enumerate(round_list):
+            target_id = r.target_id
+            target_tau_w = r.target_w
+
+            # 判断r是否为第一轮
+            if round_order == 0:
+                # 判断target是target_tau_w对应树的的left most结点
+                tree = merkle_proof[target_tau_w]
+                # 找到left most结点
+                left_most_pos = binSearchTree.binSearchTree.find_min_id(tree, len(tree)-1)
+                if tree[left_most_pos].id != target_id:
+                    print("target id in 1st round is wrong")
+                    return False, None
+
+
+            # 判断r是否为最后一轮
+            if round_order == len(round_list)-1:
+                # 判断是否存在某棵树的lb为right most结点，ub为None
+                for tau_w, (lb, ub) in r.bound.items():
+                    tree = merkle_proof[tau_w]
+                    if ub is None:
+                        # 判断lb的路径是否为'*[1..1]'形式，且lb没有右子结点，rhash=bytes(32)
+                        pattern = r'^\*1*$'
+                        if not ( re.match(pattern, tree[lb].path) and (tree[lb].rchild is None) and (tree[lb].rhash== bytes(32)) ):
+                            print("lower bound in last round is wrong")
+                            return False, None
+
+
+
+            # 判断每棵树的lb和ub是否相邻，且判断是否覆盖target_id。
+            # 之后，判断lb.id是否等于target_id。若对所有tau_w，都有lb.id==target_id，则将target_id加入结果
+            is_result = True           # 标识当前轮次的target_id是否为结果
+            for tau_w, (lb, ub) in r.bound.items():
+                tree = merkle_proof[tau_w]
+                # 如果是最后一轮，可能存在ub==None，特判
+                if (round_order == len(round_list)-1) and (ub is None):
+                    if tree[lb].id > target_id:
+                        print("target_id is larger than lb_id")
+                        return False, None
+
+                else:
+                    # 判断lb和ub是否在中序遍历顺序上相邻
+                    if not binSearchTree.binSearchTree.is_neighbor(tree, lb, ub):
+                        print("ub is not the neighbor of lb")
+                        return False, None
+
+                    # 判断是否覆盖target_id
+                    if not((tree[lb].id <= target_id) and (tree[ub].id > target_id)):
+                        print("range[lb,ub) does not cover target_id")
+                        return False, None
+
+                # 判断lb.id == target_id?
+                if tree[lb].id != target_id:
+                    is_result = False
+            
+            # 判断当前轮次target_id是否为结果
+            if is_result:
+                result.add(target_id)
+
+
+            # 判断每一轮（第一轮除外）的target_id是否为前一轮所有ub.id中最大的
+            if round_order > 0:
+                ub_old_id_max=0
+                # 找到上一轮多个ub中最大的id值
+                for tau_w_old,(_,ub_old) in round_list[round_order-1].bound.items():
+                    tree = merkle_proof[tau_w_old]
+                    if tree[ub_old].id > ub_old_id_max:
+                        ub_old_id_max = tree[ub_old].id
+                
+                # 判断
+                if target_id != ub_old_id_max:
+                    print("target id is not the largest ub of last round")
+                    return False, None
+        
+
+        # 对round的检验通过
+        print("verification for round list passes")
+        print("result:", result)
+        print(len(result))
+
+
+
+
+        ######################### merkle prove ###################################
+
+
+
+
+        return True, result
+
+
+
+

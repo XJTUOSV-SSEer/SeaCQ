@@ -13,15 +13,15 @@ class server:
     '''
 
     # CMAP，储存 k->v 的映射。k,v都是32字节bytes
-    CMAP: Dict[bytes, bytes]
+    CMAP: Dict[bytes, bytes] = dict()
 
     # trees，储存每个w对应的二叉搜索树
     # tau_w->tree。静态储存树，将树结点储存在数组中
-    trees: Dict[bytes, List[binSearchTree.binSearchTree]]
+    trees: Dict[bytes, List[binSearchTree.binSearchTree]] = dict()
 
     # 储存每棵树树根在数组中的下标
     # tau_w->root_index
-    root_pos: Dict[bytes, int]
+    root_pos: Dict[bytes, int] = dict()
 
 
 
@@ -40,7 +40,8 @@ class server:
             token - 搜索令牌，每个元素为一个四元组 (tau_w, k_w, tau_w_upd, k_w_upd)，对应于一个查询的关键字
 
         output:
-
+            round_list
+            merkle_proof
         '''
 
         # 令牌
@@ -83,7 +84,7 @@ class server:
                 # v和id
                 v = self.CMAP[k]
                 tmp = hmac.new(key=k_w_upd, msg=str(beta).encode('utf-8'), digestmod='sha256').digest()
-                id = int( str(bytes(a ^ b for a, b in zip(tmp, v))).lstrip('0') )
+                id = int( bytes(a ^ b for a, b in zip(tmp, v)).decode('utf-8').lstrip('0') )
 
                 # 将id加入upd_id_list
                 upd_id_list.append(id)
@@ -93,6 +94,9 @@ class server:
 
                 # 更新beta
                 beta += 1
+
+                # 将k-v从CMAP中删除
+                del self.CMAP[k]
             
             w_upd_id[tau_w] = upd_id_list
 
@@ -107,6 +111,7 @@ class server:
         
 
         # 将proofs_for_bc和upd_id_list发送至区块链进行验证和更新hash_root
+        # 注意，部分proof可能为空，因为对应关键字未被更新。
 
 
 
@@ -136,12 +141,14 @@ class server:
         round_list:List[round.round] = []
         
         # 储存每棵树对应的merkle proof，本质是一棵子树，使用静态数组储存。key为tau_w
-        merkle_proof:Dict[bytes, List[binSearchTree.binSearchTree]]
+        merkle_proof:Dict[bytes, List[binSearchTree.binSearchTree]] = dict()
 
         # 目标id
         target_id=0
         # 作为目标的树对应的tau_w
         target_tau_w=None
+        # 目标结点在tree数组中的下标
+        target_pos = None
 
         # 选择第一轮次的target。找到每棵树中最小的id，然后取其中最大的作为第一轮target
         for tau_w, _, _, _ in token:
@@ -152,7 +159,8 @@ class server:
             id = tree[pos].id
             if id > target_id:
                 target_id=id
-                target_tau_w = tau_w        
+                target_tau_w = tau_w
+                target_pos = pos
         
 
 
@@ -162,7 +170,7 @@ class server:
         # 每个结点的格式为 [index, flag]
         stack_w:Dict[bytes, List[List]] = dict()
 
-        # 键为tau_w，值为tau_w对应树的所有bound结点在数组中的下标
+        # 键为tau_w，值为tau_w对应树的所有bound结点在数组中的下标。
         w_bounds:Dict[bytes, Set[int]] = dict()
 
 
@@ -172,7 +180,12 @@ class server:
         while not is_finish:
 
             # 构造round对象，储存当前轮次的信息
-            r = round.round(target_id)
+            r = round.round(target_id, target_tau_w)
+
+            # 将pos信息加入w_bounds
+            if target_tau_w not in w_bounds:
+                w_bounds[target_tau_w]=set()
+            w_bounds[target_tau_w].add(target_pos)
 
             # 在当前轮次中，根据target_id，搜索每棵树
             for tau_w, _, _, _ in token:
@@ -183,14 +196,14 @@ class server:
                 st = stack_w[tau_w]
 
                 # 若是target_id所在的树，跳过
-                if tau_w == target_tau_w:
-                    continue
+                # if tau_w == target_tau_w:
+                    # continue
                 
                 # 获取tau_w对应的二叉搜索树
                 tree = self.trees[tau_w]
 
                 # 搜索target_id，得到lb，ub。中序遍历，将遍历到的结点暂存在栈中
-                lb, ub = server.find_bound(tree, target_id, st)
+                lb, ub = self.find_bound(tree, target_id, st)
 
                 # 将tau_w对应的lb, ub加入round对象
                 r.bound[tau_w] = (lb, ub)
@@ -207,6 +220,13 @@ class server:
                 if ub is not None:
                     w_bounds[tau_w].add(ub)
             
+            # 对本轮所有树的ub取最大值作为下一轮的target_id
+            for tau_w, (lb,ub) in r.bound.items():
+                if (ub is not None) and (self.trees[tau_w][ub].id>target_id):
+                    target_id = self.trees[tau_w][ub].id
+                    target_tau_w = tau_w
+                    target_pos = ub
+
 
             # 将r加入round_list
             round_list.append(r)
@@ -285,7 +305,7 @@ class server:
                 
                 st.pop()
                 if tree[current_ptr].rchild is not None:
-                    st.append(tree[current_ptr].rchild)         
+                    st.append([tree[current_ptr].rchild, False])
 
                 # 更新pre_ptr
                 pre_ptr = current_ptr

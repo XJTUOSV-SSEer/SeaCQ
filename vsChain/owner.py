@@ -6,6 +6,7 @@ import random
 import binSearchTree
 import round
 import re
+import math
 
 
 class onwer:
@@ -22,6 +23,16 @@ class onwer:
     # 其中，H_w_upd使用keccak256计算，为32字节
     DMAP: Dict[str, Tuple[int, int, bytes, bool]]=dict()
 
+    # 合约对象
+    web3 = None
+    contract = None
+
+    def __init__(self, web3, contract) -> None:
+        self.web3 = web3
+        self.contract = contract
+
+
+
 
 
     def setup(self, dataset: Dict[str, Set[int]]):
@@ -33,8 +44,8 @@ class onwer:
             CMAP - CMAP储存 k->v 的映射。k，v都为32字节bytes类型
         '''
 
-        # BMAP储存 w->hash_root 的映射
-        BMAP:Dict[str, bytes] = dict()
+        # BMAP储存 tau_w->hash_root 的映射
+        BMAP:Dict[bytes, bytes] = dict()
         # CMAP储存 k->v 的映射
         CMAP=dict()
 
@@ -62,7 +73,7 @@ class onwer:
             root, root_hash = binSearchTree.binSearchTree.construct_tree(tree, id_list, 0, len(id_list)-1, '', '*')
 
             # 更新BMAP
-            BMAP[w] = root_hash
+            BMAP[tau_w] = root_hash
 
             # 根据结点中的路径，计算k-v
             # 遍历tree数组中所有结点
@@ -80,11 +91,70 @@ class onwer:
         
 
         ################## 调用智能合约，将BMAP发送至区块链 ########################
-
+        gas = self.batch_add(BMAP, 1)
 
 
         ################## 返回 #######################################
         return CMAP
+    
+
+    def batch_add(self, BMAP:Dict[bytes,bytes], batch_size:int):
+        '''
+        setup阶段，调用智能合约，将生成的ADS字典分批加入区块链。可能存在一部分元素不足batch_size，最后当作一个batch处理。
+        input:
+            BMAP - 
+            batch_size - 每个batch的大小
+            web3 - Web3对象
+            contract - 合约对象
+        output:
+            gas - 花费的gas
+        '''
+        # 计算ADS的size
+        total_size=len(BMAP)
+
+        # 计算要分多少个batch
+        math.ceil(total_size/batch_size)
+
+        # 将数据按照batch_size分组
+        # 剩余未被处理的k-v pair数
+        remain_size=total_size
+        # 消耗的gas
+        gas=0
+        while remain_size>0:
+            # 当前批次的大小
+            current_size=0
+            if remain_size>=batch_size:
+                current_size=batch_size
+            else:
+                current_size=remain_size
+            
+            # 将current_size大小的数据从ADS中取出，并转换为两个list，分别储存key和value
+            # 从ADS中取出current_size个k-v pair
+            k_list=random.sample(list(BMAP.keys()),current_size)
+            v_list=[BMAP[k] for k in k_list]
+            # 从ADS中删除这些数据
+            for k in k_list:
+                BMAP.pop(k)
+            
+            # 调用智能合约，将两个list发送至合约，从而设置合约中的mapping
+            # 首先将两个list中的元素转换为ABI要求的数据类型
+            # _k_list=[Web3.toBytes(text=k.zfill(16)) for k in k_list]
+            # _v_list=[Web3.toBytes(int(v)) for v in v_list]
+            _k_list = k_list
+            _v_list = v_list
+            # 调用合约，并await，得到gas消耗
+            # 通过type参数指定存入合约的哪个mapping
+            tx_hash=self.contract.functions.batch_setBMAP(_k_list, _v_list, current_size).transact({
+                'from':self.web3.eth.accounts[0], 
+                'gasPrice': self.web3.eth.gasPrice, 
+                'gas': self.web3.eth.getBlock('latest').gasLimit})
+            tx_receipt = self.web3.eth.get_transaction_receipt(tx_hash)
+            gas += tx_receipt['gasUsed']
+
+            # 更新剩余数量
+            remain_size=remain_size-current_size
+
+        return gas
 
     
     def update(self, w:str, id:int):
@@ -125,7 +195,7 @@ class onwer:
 
         ######################### 更新H_w_upd ############################
         # 使用keccak256计算id的哈希值，然后与旧的H_w_upd异或
-        h_id = bytes(Web3.keccak(id))
+        h_id = bytes(Web3.keccak(str(id).encode('utf-8')))
         H_w_upd = bytes(a^b for a,b in zip(h_id, H_w_upd))
 
         ########################## 更新DMAP ############################
@@ -133,7 +203,10 @@ class onwer:
 
 
         ########################## 调用智能合约，将<tau_w_upd, H_w_upd>发送至区块链 ######################
-
+        self.contract.functions.set_UMAP(tau_w_upd, H_w_upd).transact({
+            'from':self.web3.eth.accounts[0], 
+            'gasPrice': self.web3.eth.gasPrice, 
+            'gas': self.web3.eth.getBlock('latest').gasLimit})
 
 
 
@@ -148,7 +221,7 @@ class onwer:
         token:Set[Tuple[bytes, bytes, bytes, bytes]] = set()
 
         for w in Q:
-            alpha, beta, _, _ =self.DMAP[w]
+            alpha, beta, H_w_upd, flag =self.DMAP[w]
             # tau_w
             tau_w=hmac.new(key=self.k1, msg= (w.zfill(16)+str(0).zfill(16)).encode('utf-8'), digestmod='sha256').digest()
             # k_w
@@ -159,6 +232,9 @@ class onwer:
             k_w_upd = hmac.new(key=self.k2, msg= (w.zfill(16)+str(alpha).zfill(16)).encode('utf-8'), digestmod='sha256').digest()
 
             token.add((tau_w, k_w, tau_w_upd, k_w_upd))
+
+            # 修改DMAP中flag为True
+            self.DMAP[w] = (alpha, beta, H_w_upd, True)
         
         return token
 
@@ -270,8 +346,16 @@ class onwer:
 
 
         ######################### merkle prove ###################################
+        # 遍历merkle proof中每棵树，计算hash_root
+        for tau_w, tree in merkle_proof.items():
+            root_hash = binSearchTree.binSearchTree.cal_hash_root(tree, len(tree)-1)
+            # 从区块链获取Q中每个tau_w的hash_root
+            root_on_chain = self.contract.functions.get_BMAP(tau_w).call()
 
-
+            # 判断是否相等
+            if root_hash != root_on_chain:
+                print('root hash error')
+                return False, None
 
 
         return True, result

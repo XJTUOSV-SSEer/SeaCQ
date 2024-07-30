@@ -36,7 +36,7 @@ contract ADS {
             }
             else if(typ==2){
                 dict_fid[_key]=_value;
-            }            
+            }
         }
     }
 

@@ -418,3 +418,51 @@ class binSearchTree:
                 return False
         
         return True
+
+
+    @staticmethod
+    def cal_hash_root(merkle_proof: List['binSearchTree'], ptr:int):
+        '''
+        给定merkle proof（一棵子树），重新计算hash_root
+        input:
+            merkle_proof - merkle证明，本质是一棵子树
+            ptr - 当前结点在merkle_proof数组中的下标
+        output:
+            hash_root - 以ptr为根结点的子树的根哈希
+        '''
+
+        # 递归时，结点可以分为几类：
+        # (1)在原树中是内部结点，但在merkle proof中是叶结点。child==None, hash!=0
+        # (2)child不为None
+        # (3)child==None, hash==0
+
+        # 计算得到的当前结点的lhash, rhash
+        lhash=None
+        rhash=None
+
+        # 求lhash
+        # 情况(1)(3)合并，直接使用当前节点中储存的child hash
+        if merkle_proof[ptr].lchild is None:
+            lhash = merkle_proof[ptr].lhash
+        else:
+            # 在lchild不为none的情况下，若lhash不为0，则说明该结点是被篡改的
+            if merkle_proof[ptr].lhash != bytes(32):
+                print("merkle proof node is tampered")
+            # 递归的调用，计算左子树的root hash
+            lhash = binSearchTree.cal_hash_root(merkle_proof, merkle_proof[ptr].lchild)
+        
+        # 求rhash
+        # 情况(1)(3)合并，直接使用当前节点中储存的child hash
+        if merkle_proof[ptr].rchild is None:
+            rhash = merkle_proof[ptr].rhash
+        else:
+            # 在lchild不为none的情况下，若lhash不为0，则说明该结点是被篡改的
+            if merkle_proof[ptr].rhash != bytes(32):
+                print("merkle proof node is tampered")
+            # 递归的调用，计算左子树的root hash
+            rhash = binSearchTree.cal_hash_root(merkle_proof, merkle_proof[ptr].rchild)
+        
+        
+        # 计算root_hash = H(id||lhash||rhash)
+        root_hash = bytes( Web3.keccak( str(merkle_proof[ptr].id).encode('utf-8') + lhash + rhash) )
+        return root_hash

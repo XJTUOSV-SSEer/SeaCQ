@@ -1,4 +1,5 @@
 from web3 import Web3
+from web3.exceptions import ContractLogicError
 from Crypto.Cipher import AES
 import hmac
 from typing import Dict,Set,Tuple,Any, List, Optional
@@ -22,6 +23,14 @@ class server:
     # 储存每棵树树根在数组中的下标
     # tau_w->root_index
     root_pos: Dict[bytes, int] = dict()
+
+    # 合约对象
+    web3 = None
+    contract = None
+
+    def __init__(self, web3, contract) -> None:
+        self.web3 = web3
+        self.contract = contract
 
 
 
@@ -63,9 +72,9 @@ class server:
 
         ##################### 将上一批次的更新写入CMAP和trees，并生成更新证明 ###################
         # 储存每个tau_w对应的被更新的ids
-        w_upd_id=dict()
+        w_upd_id:Dict[bytes, List[int]] = dict()
         # 储存每个tau_w对应的merkle proof，用于向区块链证明更新路径正确
-        proofs_for_bc=dict()
+        # proofs_for_bc:Dict[bytes, List[binSearchTree.binSearchTree]] = dict()
 
         for tau_w, k_w, tau_w_upd, k_w_upd in token:
             # 获取tau_w对应的二叉搜索树
@@ -98,26 +107,47 @@ class server:
                 # 将k-v从CMAP中删除
                 del self.CMAP[k]
             
+            # 若upd_id_list为空，说明当前w没有更新，直接跳过
+            if len(upd_id_list)==0:
+                continue
+        
             w_upd_id[tau_w] = upd_id_list
 
             # 先为w_upd_id生成merkle证明
-            proof=[]
+            proof:List[binSearchTree.binSearchTree]=[]
             binSearchTree.binSearchTree.gen_proof(tree, upd_id_list, proof, self.root_pos[tau_w])
             # 将证明加入proofs_for_bc
-            proofs_for_bc[tau_w] = proof
+            # proofs_for_bc[tau_w] = proof
 
             # 然后更新树结点中的hash
             binSearchTree.binSearchTree.update_hash(tree, self.root_pos[tau_w])
         
 
-        # 将proofs_for_bc和upd_id_list发送至区块链进行验证和更新hash_root
-        # 注意，部分proof可能为空，因为对应关键字未被更新。
+            # 将proofs和upd_id_list发送至区块链进行验证和更新hash_root
+            # 注意，部分proof可能为空，因为对应关键字未被更新。
+            # 使用列表推导的技巧构造函数参数
+            # 智能合约可能会抛出异常
+            tx_hash=self.contract.functions.update_tree(tau_w, 
+                                                tau_w_upd, 
+                                                [n.id for n in proof],
+                                                [n.lchild if n.lchild is not None else -1 for n in proof],
+                                                [n.rchild if n.rchild is not None else -1 for n in proof],
+                                                [n.lhash for n in proof],
+                                                [n.rhash for n in proof],
+                                                len(proof),
+                                                upd_id_list,
+                                                len(upd_id_list)).transact({
+                'from':self.web3.eth.accounts[0], 
+                'gasPrice': self.web3.eth.gasPrice, 
+                'gas': self.web3.eth.getBlock('latest').gasLimit})
+            tx_receipt = self.web3.eth.get_transaction_receipt(tx_hash)
+            print("transaction status:",tx_receipt['status'])
+            
 
 
 
         ############################ JOIN QUERY ####################################
         round_list, merkle_proof = self.join_query(token)
-
 
         # 返回
         return round_list, merkle_proof

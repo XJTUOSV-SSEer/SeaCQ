@@ -178,3 +178,4 @@ class Accumulator:
         # phi_n
         phi_n= (self.p-1)*(self.q-1)
         return numbthy.power_mod(acc, numbthy.inverse_mod(x, phi_n), self.n)
+

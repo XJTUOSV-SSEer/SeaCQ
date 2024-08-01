@@ -13,7 +13,7 @@ web3 = Web3(Web3.HTTPProvider(ganache_url))
 
 ########################### 加载合约地址和ABI ############################
 # 合约地址
-contract_address='0xEc7BDab99585fb8dF55C0B8Cf71289Ca8c41D0a6'
+contract_address='0xf9D64be6A79A6cEBc4F5570A6d845f155f87f67b'
 # 从json文件中读取abi
 json_file='../contract/build/contracts/ADS.json'
 abi=None
@@ -42,7 +42,7 @@ contract=web3.eth.contract(address=contract_address,abi=abi)
 
 
 # 大数据集
-dataset=experiment.gen_dataset(1, 5000)
+dataset=experiment.gen_dataset(10, 5000)
 Q={'1'}
 # print(dataset)
 print("generate dataset")
@@ -76,6 +76,6 @@ start_time = time.time()
 flag,R=owner.verify(w,P_Q,result, web3,contract,k2)
 end_time = time.time()
 print("verify time cost:", end_time - start_time, "s")
-print(w)
+# print(w)
 print(flag)
 # print(R)

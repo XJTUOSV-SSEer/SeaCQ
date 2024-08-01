@@ -13,7 +13,7 @@ web3 = Web3(Web3.HTTPProvider(ganache_url))
 
 ########################### 加载合约地址和ABI ############################
 # 合约地址
-contract_address='0xEc7BDab99585fb8dF55C0B8Cf71289Ca8c41D0a6'
+contract_address='0x62bBC9743fc53725Eac1fdAc40c5e12197d0bc1e'
 # 从json文件中读取abi
 json_file='../contract/build/contracts/ADS.json'
 abi=None
@@ -42,7 +42,7 @@ contract=web3.eth.contract(address=contract_address,abi=abi)
 
 
 # 大数据集
-dataset=experiment.gen_dataset(1,5000)
+dataset=experiment.gen_dataset(10,5000)
 Q={'1'}
 # print(dataset)
 print("generate dataset")

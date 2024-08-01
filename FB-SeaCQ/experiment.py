@@ -17,7 +17,8 @@ def gen_dataset(w_num:int, fid_num:int):
 
     for w in range(1,w_num+1):
         # 生成fid_num个随机的文件id，且取值范围为[1,10*fid_num]
-        fid_list=[random.randint(1, 1+10*fid_num) for _ in range(fid_num)]
+        # fid_list=[random.randint(1, 1+10*fid_num) for _ in range(fid_num)]
+        fid_list=random.sample(range(1, 1+10*fid_num), fid_num)
 
         # 将这些(w, fid)加入数据集
         for fid in fid_list:

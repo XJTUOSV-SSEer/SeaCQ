@@ -1,7 +1,8 @@
+from pickle import LIST
 import Accumulator
 from Crypto.Cipher import AES
 import hmac
-from typing import Dict,Set,Tuple,Any
+from typing import Dict, Optional,Set,Tuple,Any, List
 import random
 from web3 import Web3
 import json
@@ -102,7 +103,7 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
         ADS_fid[fid]=Acc_fid
     
     # 调用智能合约
-    batch_size=500
+    batch_size=1000
     # 将ADS_w批量存入区块链
     gas_w=batch_add(ADS_w, 1, batch_size,web3,contract)
     gas_fid=batch_add(ADS_fid, 2, batch_size,web3,contract)
@@ -230,7 +231,11 @@ def verify(w:str, P_Q:int, result:Set[Tuple[bytes,Any,int]], web3, contract, k2:
     # 储存匹配查询条件的fid
     R=set()
 
-    # 对w对应的链进行解密，得到fid和t_fid
+    # 对w对应的链进行解密，得到fid和t_fid，储存在一个列表中
+    fid_list:List[str] = []
+    typ_list:List[int] = []
+    pi_list:List[Tuple] = []
+    p_list:List[Optional[int]] = []
     for tup in result:
         c_fid=tup[0]
         pi=tup[1]
@@ -239,15 +244,30 @@ def verify(w:str, P_Q:int, result:Set[Tuple[bytes,Any,int]], web3, contract, k2:
         fid_bytes=aes.decrypt(c_fid).decode('utf-8')
         # 去掉填充，得到fid的字符串形式
         fid=fid_bytes.lstrip('0')
+        fid_list.append(fid)
+        typ_list.append(type)
+        pi_list.append(pi)
+        if len(tup) == 4:
+            p_list.append(tup[3])
+        else:
+            p_list.append(None)
+    
 
-        # 从区块链中读取Acc_fid的字节形式，并转换为大整数
-        Acc_fid_bytes=contract.functions.getADS(Web3.toBytes(text=fid.zfill(16)), 2).call()
-        Acc_fid=Web3.toInt(Acc_fid_bytes)
+    # 从区块链中批量取出Acc_fid，并转换为大整数
+    acc_bytes_list = contract.functions.batch_get_ADS([Web3.toBytes(text=fid.zfill(16)) for fid in fid_list], 
+                                        len(fid_list)).call()
+    acc_list = [Web3.toInt(acc_bytes) for acc_bytes in acc_bytes_list]
 
-        # 验证
-        if type==0:
+    # 对fid_list中的所有fid，判断Acc_fid是否匹配Q
+    # 批量验证correctness
+    for i, fid in enumerate(fid_list):
+        Acc_fid = acc_list[i]
+        pi = pi_list[i]
+
+        # 不存在证明
+        if typ_list[i] == 0:
             # 取出p=P_Q/gcd(P_fid,P_Q)
-            p=tup[3]
+            p=p_list[i]
 
             # 验证不匹配P_Q
             if (P_Q%p!=0) or (not msa.verify_non_membership(pi[0],pi[1],Acc_fid,p)):
@@ -255,8 +275,9 @@ def verify(w:str, P_Q:int, result:Set[Tuple[bytes,Any,int]], web3, contract, k2:
                 return False,R
             else:
                 X_w.add(Accumulator.str2prime(fid))
-        elif type==1:
-            # 验证P_Q存在
+
+        # 存在证明
+        elif typ_list[i] == 1:
             if not msa.verify_membership(pi,Acc_fid,P_Q):
                 print("correctness verification failed")
                 return False,R

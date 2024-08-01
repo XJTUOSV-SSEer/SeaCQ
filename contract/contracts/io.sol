@@ -52,6 +52,18 @@ contract ADS {
         }        
     }
 
+    // 批量获取Acc_fid。key为fid的列表
+    function batch_get_ADS(bytes16[] memory _key_list, uint len) public view returns (bytes[] memory){
+        bytes[] memory acc_list= new bytes[](len);
+
+        for(uint i=0; i<len; i++){
+            bytes16 k = _key_list[i];
+            acc_list[i] = dict_fid[k];
+        }
+
+        return acc_list;
+    }
+
 
 
     // 设置ACC_ADS和ACC_P

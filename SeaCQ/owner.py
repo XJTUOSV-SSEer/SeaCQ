@@ -7,6 +7,7 @@ import random
 from web3 import Web3
 import json
 import math
+import time
 
 
 def setup(dataset:Dict[str,Set[str]], web3, contract):
@@ -23,6 +24,9 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
         index2 - 一个字典。key为t_fid（bytes类型），value为该文件对应的P_fid（一个大整数）。
         ST - 一个字典。key为w（str类型），value为w的计数器（int类型）
         gas - 消耗的gas
+        t1 - index construction time
+        t2 - ADS generation time
+        t3 - transaction time
     '''
 
     # 索引，将会发送至服务器
@@ -54,6 +58,8 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
                 inv_index[w]=set()
             inv_index[w].add(fid)
     
+
+
     # 遍历倒排索引，计算密文和Acc_w
     for w, fid_set in inv_index.items():
         # 生成w的tag
@@ -63,6 +69,9 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
         # 素数集合X_w，保存w对应的id的素数
         X_w=set()
 
+
+        t1_s = time.time()
+        t2 = 0
         # 遍历id集合
         aes=AES.new(key=k2,mode=AES.MODE_ECB)
         for fid in fid_set:
@@ -82,8 +91,13 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
         # 更新计数器
         c=c-1
         ST[w]=c
+
+        t2_s = time.time()
         # 计算X_w对应的Acc
         Acc_w, _=msa.genAcc(X_w)
+
+        t2_e = time.time()
+        t2 = t2 + t2_e - t2_s
         # 将Acc_w加入ADS
         ADS_w[w]=Acc_w
     
@@ -91,17 +105,27 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
     for fid,wset in dataset.items():
         # 计算fid的tag
         t_fid=hmac.new(key=k1,msg=fid.encode('utf-8'),digestmod='sha256').digest()
+
+        t2_s = time.time()
         # 计算文件中关键字对应的素数集合
         X_id=set()
         for w in wset:
             x=Accumulator.str2prime(w)
             X_id.add(x)
         Acc_fid,P_fid=msa.genAcc(X_id)
+        t2_e = time.time()
+        t2 = t2 + t2_e - t2_s
+
         # 将t_fid,P_fid加入索引
         index2[t_fid]=P_fid
         # 将Acc_fid加入ADS
         ADS_fid[fid]=Acc_fid
     
+    t1_e = time.time()
+    t1 = t1_e - t1_s -t2
+
+
+    t3_s = time.time()
     # 调用智能合约
     batch_size=1000
     # 将ADS_w批量存入区块链
@@ -109,9 +133,11 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
     gas_fid=batch_add(ADS_fid, 2, batch_size,web3,contract)
     # 总的gas
     gas=gas_w+gas_fid
+    t3_e = time.time()
+    t3 = t3_e - t3_s
 
     # 将密钥和构建的两个索引返回
-    return k1,k2,index1,index2,ST,gas
+    return k1,k2,index1,index2,ST,gas, t1, t2, t3
 
 
 

@@ -1,7 +1,13 @@
+import pickle
 import random
+import time
+import owner
+import server
+from typing import Dict, Set, Tuple
 
 def gen_dataset(w_num:int, fid_num:int):
     '''
+    (弃用)
     生成数据集，数据集的形式为文件。
     首先生成w_num个倒排索引，每个关键字对应的fid数为fid_num。
     然后将倒排索引转换为文件的形式。
@@ -30,3 +36,25 @@ def gen_dataset(w_num:int, fid_num:int):
     
     return dataset
 
+
+
+def test_setup(file_name, web3, contract):
+    '''
+    测试setup性能
+    input:
+        file_name: 数据集的文件名，相对路径
+    '''
+
+    dataset = None
+    with open (file_name, 'rb') as f: #打开文件
+        dataset = pickle.load(f)
+    
+
+    # t1 - index construction time
+    # t2 - ADS generation time
+    # t3 - transaction time
+    k1,k2,index1,index2,ST,gas, t1, t2, t3=owner.setup(dataset,web3,contract)
+
+    print("index construction time:", t1)
+    print("ADS generation time:", t2)
+    print("ADS generation time:", t3)

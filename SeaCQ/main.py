@@ -13,7 +13,7 @@ web3 = Web3(Web3.HTTPProvider(ganache_url))
 
 ########################### 加载合约地址和ABI ############################
 # 合约地址
-contract_address='0xf9D64be6A79A6cEBc4F5570A6d845f155f87f67b'
+contract_address='0xefbF81372aBC3723463746a89CEb42080563684C'
 # 从json文件中读取abi
 json_file='../contract/build/contracts/ADS.json'
 abi=None
@@ -41,41 +41,48 @@ contract=web3.eth.contract(address=contract_address,abi=abi)
 # Q={'w6','w4','w1','w7'}
 
 
-# 大数据集
+# # 大数据集
 dataset=experiment.gen_dataset(10, 5000)
 Q={'1'}
-# print(dataset)
-print("generate dataset")
+# # print(dataset)
+# print("generate dataset")
 
-# dataset={'9': {'1'}, '18': {'1'}, '17': {'1', '2'}, '3': {'2'}, '25': {'2'}, '2': {'3'}, '10': {'3'}, '23': {'3'}}
-# Q={'1','2','3'}
+# # dataset={'9': {'1'}, '18': {'1'}, '17': {'1', '2'}, '3': {'2'}, '25': {'2'}, '2': {'3'}, '10': {'3'}, '23': {'3'}}
+# # Q={'1','2','3'}
 
-# owner setup
-start_time = time.time()
+# # owner setup
+# start_time = time.time()
 k1,k2,index1,index2,ST,gas=owner.setup(dataset,web3,contract)
-end_time = time.time()
-print("setup time cost:", end_time - start_time, "s")
-print("setup gas cost:", gas)
-print("setup finish")
+# end_time = time.time()
+# print("setup time cost:", end_time - start_time, "s")
+# print("setup gas cost:", gas)
+# print("setup finish")
 
-# user search
-# 生成token
-w, t_w,P_Q,c=owner.search(Q,ST,k1)
+# # user search
+# # 生成token
+# w, t_w,P_Q,c=owner.search(Q,ST,k1)
 
-print("tokengen finish")
+# print("tokengen finish")
 
-# server搜索并返回结果
-start_time = time.time()
-result=server.search(t_w,P_Q,c,index1,index2)
-end_time = time.time()
-print("search time cost:", end_time - start_time, "s")
-print("search finish")
+# # server搜索并返回结果
+# start_time = time.time()
+# result=server.search(t_w,P_Q,c,index1,index2)
+# end_time = time.time()
+# print("search time cost:", end_time - start_time, "s")
+# print("search finish")
 
-# user验证
-start_time = time.time()
-flag,R=owner.verify(w,P_Q,result, web3,contract,k2)
-end_time = time.time()
-print("verify time cost:", end_time - start_time, "s")
-# print(w)
-print(flag)
-# print(R)
+# # user验证
+# start_time = time.time()
+# flag,R=owner.verify(w,P_Q,result, web3,contract,k2)
+# end_time = time.time()
+# print("verify time cost:", end_time - start_time, "s")
+# # print(w)
+# print(flag)
+# # print(R)
+
+
+
+############################## 实验 #########################
+###########################   测试Setup ###################
+# 100K file, 50 w
+# experiment.test_setup("../dataset/100K_file_50_w.dat", web3, contract)

@@ -9,11 +9,12 @@ import experiment
 ########################## 连接到区块链网络 #########################
 # ganache网络
 ganache_url = "http://127.0.0.1:8545"
-web3 = Web3(Web3.HTTPProvider(ganache_url))
+web3 = Web3(Web3.WebsocketProvider("ws://127.0.0.1:8545", websocket_kwargs={'timeout': 360}))
+# web3 = Web3(Web3.HTTPProvider(ganache_url, request_kwargs={'timeout':60}))
 
 ########################### 加载合约地址和ABI ############################
 # 合约地址
-contract_address='0xefbF81372aBC3723463746a89CEb42080563684C'
+contract_address='0x590a8D5DEe98Ee7922dD3ec5762735Fc602F2D86'
 # 从json文件中读取abi
 json_file='../contract/build/contracts/ADS.json'
 abi=None
@@ -35,15 +36,15 @@ contract=web3.eth.contract(address=contract_address,abi=abi)
 # 中数据集
 # dataset={'f1':{'w1','w2','w3','w4'}, 'f2':{'w1','w3','w5','w6'}, 'f3':{'w2','w3','w5','w7'}, 
 #         'f4':{'w1','w2','w4','w6','w7'}}
-# Q={'w1','w2','w3'}
+# Q={'w3','w5'}
 # Q={'w6','w4','w1','w3'}
 # Q={'w4','w3','w2','w1'}
 # Q={'w6','w4','w1','w7'}
 
 
 # # 大数据集
-dataset=experiment.gen_dataset(10, 5000)
-Q={'1'}
+# dataset=experiment.gen_dataset(10, 5000)
+# Q={'1'}
 # # print(dataset)
 # print("generate dataset")
 
@@ -52,7 +53,10 @@ Q={'1'}
 
 # # owner setup
 # start_time = time.time()
-k1,k2,index1,index2,ST,gas=owner.setup(dataset,web3,contract)
+# k1,k2,index1,index2,ST,gas,t1,t2,t3=owner.setup(dataset,web3,contract)
+# print(t1)
+# print(t2)
+# print(t3)
 # end_time = time.time()
 # print("setup time cost:", end_time - start_time, "s")
 # print("setup gas cost:", gas)
@@ -78,7 +82,7 @@ k1,k2,index1,index2,ST,gas=owner.setup(dataset,web3,contract)
 # print("verify time cost:", end_time - start_time, "s")
 # # print(w)
 # print(flag)
-# # print(R)
+# print(R)
 
 
 
@@ -86,3 +90,23 @@ k1,k2,index1,index2,ST,gas=owner.setup(dataset,web3,contract)
 ###########################   测试Setup ###################
 # 100K file, 50 w
 # experiment.test_setup("../dataset/100K_file_50_w.dat", web3, contract)
+# 100K file, 100 w
+# experiment.test_setup("../dataset/100K_file_100_w.dat", web3, contract)
+# 100K file, 150 w
+# experiment.test_setup("../dataset/100K_file_150_w.dat", web3, contract)
+# 100K file, 200 w
+# experiment.test_setup("../dataset/100K_file_200_w.dat", web3, contract)
+# 100K file, 250 w
+# experiment.test_setup("../dataset/100K_file_250_w.dat", web3, contract)
+
+# 20K file, 200 w
+# experiment.test_setup("../dataset/20K_file_200_w.dat", web3, contract)
+# 40K file, 200 w
+# experiment.test_setup("../dataset/40K_file_200_w.dat", web3, contract)
+# 60K file, 200 w
+# experiment.test_setup("../dataset/60K_file_200_w.dat", web3, contract)
+# 80K file, 200 w
+# experiment.test_setup("../dataset/80K_file_200_w.dat", web3, contract)
+
+# 100K file, 200w, w1~w10匹配前1K文件，搜索2个w
+experiment.test_search("../dataset/100K_file_200_w_1000.dat", 2, web3, contract)

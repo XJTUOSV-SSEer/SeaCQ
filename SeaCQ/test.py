@@ -1,6 +1,8 @@
 # from web3 import Web3
 # import json
 # from hexbytes import HexBytes
+import Accumulator
+import time
 
 # # 连接到区块链网络
 # # ganache网络
@@ -44,7 +46,21 @@
 # print(Web3.toInt(r))
 
 
-a=[]
-a.append('zhg')
-a.append('123')
-print(a)
+# a=[]
+# a.append('zhg')
+# a.append('123')
+# print(a)
+
+
+xset=set()
+
+for i in range(80000):
+    xset.add(Accumulator.str2prime(str(i)))
+msa=Accumulator.Accumulator(p=252533614457563255817176556954479732787,
+                                q=326896810465200637570669519551882712907,
+                                g=65537)
+
+t1 = time.time()
+msa.genAcc(xset)
+t2=time.time()
+print(t2-t1)

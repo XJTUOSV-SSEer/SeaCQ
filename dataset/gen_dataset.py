@@ -45,7 +45,7 @@ def gen_dataset1(f_num:int, w_num:int, filename1:str, filename2:str):
 
 def gen_dataset2(f_num:int, w_num:int, filename1:str, filename2:str, w1_f_num):
     '''
-    生成用于测试搜索性能的数据集。w1只包含前w1_f_num个文件，w2~w10只匹配前100个文件，其余文件不包含w1~w10
+    生成用于测试搜索性能的数据集。w1只包含前w1_f_num个文件，w2~w10只匹配前1000个文件，其余文件不包含w1~w10
     input:
         f_num - 
         w_num -
@@ -67,16 +67,16 @@ def gen_dataset2(f_num:int, w_num:int, filename1:str, filename2:str, w1_f_num):
         w_list = ['w'+str(s) for s in random.sample(range(11, 1+5*w_num), w_num-10)]
         index[str(i)].update(w_list)
 
-    # w1_f_num+1~100文件，必须包含w2~w10, 且不包含w1
+    # w1_f_num+1~1000文件，必须包含w2~w10, 且不包含w1
     tmp = ['w'+str(s) for s in range(2,11)]
-    for i in range(w1_f_num+1, 101):
+    for i in range(w1_f_num+1, 1001):
         index[str(i)] = set(tmp)
         # 再生成 w_num-9 个不同的关键字
         w_list = ['w'+str(s) for s in random.sample(range(11, 1+5*w_num), w_num-9)]
         index[str(i)].update(w_list)
     
     # 其余文件，不能包含w1~w10
-    for i in range(101, f_num+1):
+    for i in range(1001, f_num+1):
         w_list = ['w'+str(s) for s in random.sample(range(11, 1+5*w_num), w_num)]
         index[str(i)] = set(w_list)
 
@@ -86,6 +86,10 @@ def gen_dataset2(f_num:int, w_num:int, filename1:str, filename2:str, w1_f_num):
             if w not in inverted_index:
                 inverted_index[w] = set()
             inverted_index[w].add(int(f))
+    
+    print(len(inverted_index['w1']))
+    print(len(inverted_index['w2']))
+    print(len(inverted_index['w10']))
     
     # 将数据持久化存储
     with open(filename1, 'wb') as f1:
@@ -99,34 +103,34 @@ def gen_dataset2(f_num:int, w_num:int, filename1:str, filename2:str, w1_f_num):
 
 
 if __name__ == '__main__':
-    # 100K文件，每个文件中200个关键字。w1只存在于前20个文件中,w2~w10只存在于前100个文件中
-    gen_dataset2(100000, 200, './100K_file_50_w_20.dat', './inv_100K_file_50_w_20.dat', 20)
-    # 100K文件，每个文件中200个关键字。w1只存在于前40个文件中,w2~w10只存在于前100个文件中
-    gen_dataset2(100000, 200, './100K_file_50_w_40.dat', './inv_100K_file_50_w_40.dat', 40)
-    # 100K文件，每个文件中200个关键字。w1只存在于前60个文件中,w2~w10只存在于前100个文件中
-    gen_dataset2(100000, 200, './100K_file_50_w_60.dat', './inv_100K_file_50_w_60.dat', 60)
-    # 100K文件，每个文件中200个关键字。w1只存在于前80个文件中,w2~w10只存在于前100个文件中
-    gen_dataset2(100000, 200, './100K_file_50_w_80.dat', './inv_100K_file_50_w_80.dat', 80)
-    # 100K文件，每个文件中200个关键字。w1只存在于前100个文件中,w2~w10只存在于前100个文件中
-    gen_dataset2(100000, 200, './100K_file_50_w_100.dat', './inv_100K_file_50_w_100.dat', 100)
+    # 100K文件，每个文件中200个关键字。w1只存在于前200个文件中,w2~w10只存在于前1000个文件中
+    gen_dataset2(100000, 200, './100K_file_200_w_200.dat', './inv_100K_file_200_w_200.dat', 200)
+    # 100K文件，每个文件中200个关键字。w1只存在于前400个文件中,w2~w10只存在于前1000个文件中
+    gen_dataset2(100000, 200, './100K_file_200_w_400.dat', './inv_100K_file_200_w_400.dat', 400)
+    # 100K文件，每个文件中200个关键字。w1只存在于前600个文件中,w2~w10只存在于前1000个文件中
+    gen_dataset2(100000, 200, './100K_file_200_w_600.dat', './inv_100K_file_200_w_600.dat', 600)
+    # 100K文件，每个文件中200个关键字。w1只存在于前800个文件中,w2~w10只存在于前1000个文件中
+    gen_dataset2(100000, 200, './100K_file_200_w_800.dat', './inv_100K_file_200_w_800.dat', 800)
+    # 100K文件，每个文件中200个关键字。w1只存在于前1000个文件中,w2~w10只存在于前1000个文件中
+    gen_dataset2(100000, 200, './100K_file_200_w_1000.dat', './inv_100K_file_200_w_1000.dat', 1000)
 
 
-    # 100K文件，每个文件中50个关键字
-    gen_dataset1(100000, 50, './100K_file_50_w.dat', './inv_100K_file_50_w.dat')
-    # 100K文件，每个文件中50个关键字
-    gen_dataset1(100000, 100, './100K_file_100_w.dat', './inv_100K_file_100_w.dat')
-    # 100K文件，每个文件中150个关键字
-    gen_dataset1(100000, 150, './100K_file_150_w.dat', './inv_100K_file_150_w.dat')
-    # 100K文件，每个文件中200个关键字
-    gen_dataset1(100000, 200, './100K_file_200_w.dat', './inv_100K_file_200_w.dat')
-    # 100K文件，每个文件中250个关键字
-    gen_dataset1(100000, 250, './100K_file_250_w.dat', './inv_100K_file_250_w.dat')
+    # # 100K文件，每个文件中50个关键字
+    # gen_dataset1(100000, 50, './100K_file_50_w.dat', './inv_100K_file_50_w.dat')
+    # # 100K文件，每个文件中50个关键字
+    # gen_dataset1(100000, 100, './100K_file_100_w.dat', './inv_100K_file_100_w.dat')
+    # # 100K文件，每个文件中150个关键字
+    # gen_dataset1(100000, 150, './100K_file_150_w.dat', './inv_100K_file_150_w.dat')
+    # # 100K文件，每个文件中200个关键字
+    # gen_dataset1(100000, 200, './100K_file_200_w.dat', './inv_100K_file_200_w.dat')
+    # # 100K文件，每个文件中250个关键字
+    # gen_dataset1(100000, 250, './100K_file_250_w.dat', './inv_100K_file_250_w.dat')
 
-    # 20K文件，每个文件中200关键字
-    gen_dataset1(20000, 200, './20K_file_200_w.dat', './inv_20K_file_200_w.dat')
-    # 40K文件，每个文件中200关键字
-    gen_dataset1(40000, 200, './40K_file_200_w.dat', './inv_40K_file_200_w.dat')
-    # 60K文件，每个文件中200关键字
-    gen_dataset1(60000, 200, './60K_file_200_w.dat', './inv_60K_file_200_w.dat')
-    # 80K文件，每个文件中200关键字
-    gen_dataset1(80000, 200, './80K_file_200_w.dat', './inv_80K_file_200_w.dat')
+    # # 20K文件，每个文件中200关键字
+    # gen_dataset1(20000, 200, './20K_file_200_w.dat', './inv_20K_file_200_w.dat')
+    # # 40K文件，每个文件中200关键字
+    # gen_dataset1(40000, 200, './40K_file_200_w.dat', './inv_40K_file_200_w.dat')
+    # # 60K文件，每个文件中200关键字
+    # gen_dataset1(60000, 200, './60K_file_200_w.dat', './inv_60K_file_200_w.dat')
+    # # 80K文件，每个文件中200关键字
+    # gen_dataset1(80000, 200, './80K_file_200_w.dat', './inv_80K_file_200_w.dat')

@@ -57,4 +57,42 @@ def test_setup(file_name, web3, contract):
 
     print("index construction time:", t1)
     print("ADS generation time:", t2)
-    print("ADS generation time:", t3)
+    print("transaction time:", t3)
+    print("Gas Used:", gas)
+
+
+
+def test_search(file_name:str, q_num:int, web3, contract):
+    '''
+    测试搜索性能
+    input:
+        file_name - 数据集的文件名，相对路径
+        q_num - join query的关键字数量
+    '''
+    dataset = None
+    with open (file_name, 'rb') as f: #打开文件
+        dataset = pickle.load(f)
+
+    # setup 
+    k1,k2,index1,index2,ST,gas, _, _, _=owner.setup(dataset,web3,contract)
+
+    for q_num in range(2,12,2):
+        
+        # 查询条件Q
+        Q=set()
+        for i in range(1, q_num+1):
+            Q.add('w'+str(i))
+
+        # search
+        # 限制查询的w为w1
+        w = None
+        while w != 'w1':
+            w, t_w,P_Q,c=owner.search(Q,ST,k1)
+        
+        result, t_find_result, t_gen_vo=server.search(t_w,P_Q,c,index1,index2)
+        flag, R, t_verify = owner.verify(w,P_Q,result, web3,contract,k2)
+        print("find result:", t_find_result)
+        print("generate VO:", t_gen_vo)
+        print("verify:", t_verify)
+        print(flag)
+        print(len(R))

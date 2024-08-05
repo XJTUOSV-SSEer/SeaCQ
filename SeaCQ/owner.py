@@ -43,24 +43,34 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
     # 一个字典，储存每个关键字对应的计数器。key为str类型，value为int类型
     ST=dict()
 
+    # 优化，用索引储存w和fid对应的素数
+    primetable:Dict[str, int] = dict()
+
 
     # 生成对称加密密钥k1,k2
     k1='XJTUOSV1'.zfill(16).encode('utf-8')
     k2='XJTUOSV2'.zfill(16).encode('utf-8')
 
-    # 根据数据集，构造倒排索引（字典类型,Dict[str,Set[str]]）
+    # 根据数据集，构造倒排索引（字典类型,Dict[str,Set[str]]）和素数表
     inv_index=dict()
     for fid,w_set in dataset.items():
+        primetable[fid] = Accumulator.str2prime(fid)
         for w in w_set:
             # 关键字尚不存在，需要创建一个k-v pair
             if w not in inv_index:
                 # 创建一个空集合
                 inv_index[w]=set()
             inv_index[w].add(fid)
+
+            if w not in primetable:
+                primetable[w] = Accumulator.str2prime(w)
     
+    print(1)
 
 
     # 遍历倒排索引，计算密文和Acc_w
+    t1_s = time.time()
+    t2 = 0
     for w, fid_set in inv_index.items():
         # 生成w的tag
         t_w=hmac.new(key=k1,msg=w.encode('utf-8'),digestmod='sha256').digest()
@@ -69,9 +79,7 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
         # 素数集合X_w，保存w对应的id的素数
         X_w=set()
 
-
-        t1_s = time.time()
-        t2 = 0
+        
         # 遍历id集合
         aes=AES.new(key=k2,mode=AES.MODE_ECB)
         for fid in fid_set:
@@ -82,7 +90,8 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
             # fid的tag
             t_fid=hmac.new(key=k1,msg=fid.encode('utf-8'),digestmod='sha256').digest()
             # 更新X_w
-            x=Accumulator.str2prime(fid)
+            # x=Accumulator.str2prime(fid)
+            x=primetable[fid]         # 优化
             X_w.add(x)
             c=c+1
             # 储存在索引中
@@ -110,7 +119,8 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
         # 计算文件中关键字对应的素数集合
         X_id=set()
         for w in wset:
-            x=Accumulator.str2prime(w)
+            # x=Accumulator.str2prime(w)
+            x = primetable[w]         # 优化
             X_id.add(x)
         Acc_fid,P_fid=msa.genAcc(X_id)
         t2_e = time.time()
@@ -124,10 +134,12 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
     t1_e = time.time()
     t1 = t1_e - t1_s -t2
 
+    print("ADS_w:", len(ADS_w))
+    print("ADS_fid:", len(ADS_fid))
 
     t3_s = time.time()
     # 调用智能合约
-    batch_size=1000
+    batch_size=2000
     # 将ADS_w批量存入区块链
     gas_w=batch_add(ADS_w, 1, batch_size,web3,contract)
     gas_fid=batch_add(ADS_fid, 2, batch_size,web3,contract)
@@ -187,11 +199,19 @@ def batch_add(ADS:Dict[str,int], type:int, batch_size:int, web3, contract):
         # 调用合约，并await，得到gas消耗
         # 通过type参数指定存入合约的哪个mapping
         tx_hash=contract.functions.batch_setADS(_k_list, _v_list, current_size, type).transact({
-            'from':web3.eth.accounts[0], 
-            'gasPrice': web3.eth.gasPrice, 
-            'gas': web3.eth.getBlock('latest').gasLimit})
+            # 'from':web3.eth.accounts[0], 
+            # 'gasPrice': web3.eth.gasPrice, 
+            # 'gas': web3.eth.getBlock('latest').gasLimit})
+            "from": web3.eth.accounts[0],
+            "gas": 300000000,
+            "gasPrice": web3.eth.gasPrice})
         tx_receipt = web3.eth.get_transaction_receipt(tx_hash)
         gas += tx_receipt['gasUsed']
+
+        # 账户余额
+        balance = web3.fromWei(web3.eth.get_balance(web3.eth.accounts[0]), 'ether' )
+        print(balance)
+
 
         # 更新剩余数量
         remain_size=remain_size-current_size
@@ -242,6 +262,7 @@ def verify(w:str, P_Q:int, result:Set[Tuple[bytes,Any,int]], web3, contract, k2:
     output:
         flag - 标识验证是否通过。若为True，验证通过；若为False，验证失败
         R - 查询结果的明文。一个集合，元素为str。
+        t - verify time
     '''
     # 解密密钥
     k2='XJTUOSV2'.zfill(16).encode('utf-8')
@@ -251,7 +272,7 @@ def verify(w:str, P_Q:int, result:Set[Tuple[bytes,Any,int]], web3, contract, k2:
                                 q=326896810465200637570669519551882712907,
                                 g=65537)
     
-
+    t_s = time.time()
     # X_w储存w对应的fid的素数
     X_w=set()
     # 储存匹配查询条件的fid
@@ -321,8 +342,11 @@ def verify(w:str, P_Q:int, result:Set[Tuple[bytes,Any,int]], web3, contract, k2:
     if Acc!=Acc_w:
         print("completeness verification failed")
         return False, R
+    
+    t_e = time.time()
+    t = t_e-t_s
 
-    return True, R
+    return True, R, t
 
 
 

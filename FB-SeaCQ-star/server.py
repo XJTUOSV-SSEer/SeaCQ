@@ -5,6 +5,7 @@ import hmac
 from typing import Dict,Set,Tuple
 from web3 import Web3
 import json
+import time
 import numbthy
 
 
@@ -31,6 +32,8 @@ def search(t_w:bytes, P_Q, st, index1:Dict[bytes,Tuple[bytes,bytes]], index2:Dic
                  type标识pi1的类型：若是存在证明，type==1; 若是不存在证明，type==0。当是不存在证明时，额外返回p，即
                  p=P_Q/gcd(P_fid,P_Q)
         pi4 - 完整性证明pi4，Acc_w关于ADS的存在证明。
+        t1 - find result time
+        t2 - generate VO time
     '''
 
     # 正确性证明
@@ -40,6 +43,9 @@ def search(t_w:bytes, P_Q, st, index1:Dict[bytes,Tuple[bytes,bytes]], index2:Dic
     msa=Accumulator.Accumulator(p=252533614457563255817176556954479732787,
                                 q=326896810465200637570669519551882712907,
                                 g=65537)
+    
+    t1_s = time.time()
+    t2 = 0
 
     st_new=st
     # 遍历w对应的链
@@ -56,6 +62,8 @@ def search(t_w:bytes, P_Q, st, index1:Dict[bytes,Tuple[bytes,bytes]], index2:Dic
         st_old=tmp[:16]
         t_fid=tmp[16:]
 
+        t2_s = time.time()
+
         # 找到fid对应的P_fid
         P_fid=index2[t_fid]
         # 计算Acc_fid
@@ -65,12 +73,21 @@ def search(t_w:bytes, P_Q, st, index1:Dict[bytes,Tuple[bytes,bytes]], index2:Dic
         # 生成证明pi3，证明Acc_fid属于ADS
         pi3 = msa.prove_membership(Accumulator.str2prime(str(Acc_fid)), P)
 
+        t2_e = time.time()
+        t2 = t2+t2_e-t2_s
+
         # 判断P_fid能否整除P_Q
         type=0
         pi=None
         if P_fid % P_Q==0:
+            t2_s = time.time()
+
             # 该文件匹配查询条件Q，生成存在证明
             pi1=msa.prove_membership(P_Q,P_fid)
+
+            t2_e = time.time()
+            t2 = t2+t2_e-t2_s
+
             type=1
 
             # 将密文与证明加入结果
@@ -83,8 +100,14 @@ def search(t_w:bytes, P_Q, st, index1:Dict[bytes,Tuple[bytes,bytes]], index2:Dic
             # P_Q / gcd
             p=P_Q//gcd
 
+            t2_s = time.time()
+
             # 该文件不匹配Q，生成不存在证明
             pi1=msa.prove_non_membership(p,P_fid)
+
+            t2_e = time.time()
+            t2 = t2+t2_e-t2_s
+
             type=0
 
             # 将密文与证明加入结果
@@ -93,14 +116,22 @@ def search(t_w:bytes, P_Q, st, index1:Dict[bytes,Tuple[bytes,bytes]], index2:Dic
         # 更新st_new
         st_new=st_old
 
+    t2_s = time.time()
+
     # 生成完整性证明，证明Acc_w属于ADS
     # 首先根据p_w计算Acc_w
     P_w=index3[t_w]
     Acc_w=msa.genAcc2(P_w)
     pi4=msa.prove_membership(Accumulator.str2prime(str(Acc_w)), P)
 
+    t2_e = time.time()
+    t2 = t2+t2_e-t2_s
+
+    t1_e = time.time()
+    t1 = t1_e - t1_s -t2
+
     # 返回
-    return correctness_proof, pi4
+    return correctness_proof, pi4, t1, t2
 
 
 

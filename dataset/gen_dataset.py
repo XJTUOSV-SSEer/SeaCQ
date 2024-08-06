@@ -100,19 +100,59 @@ def gen_dataset2(f_num:int, w_num:int, filename1:str, filename2:str, w1_f_num):
         
 
 
+def gen_upd_dataset(f_num:int, w_num:int, dataset_name:str, filename1:str):
+    '''
+    生成add的数据,要求w-id不能已存在于数据库. 以fid-w_set的形式持久化存储
+    input:
+        f_num - 对前f_num个文件更新
+        w_num - 每个文件add w_num个新关键字
+        dataset_name - 原数据集的文件名
+        filename1 - 要写入的文件名
+    '''
+    # 获取原数据集
+    with open (dataset_name, 'rb') as f: #打开文件
+        dataset = pickle.load(f)
+
+    upd_dataset:Dict[str, Set[str]] = dict()
+    
+    for i in range(1, f_num+1):
+        id = str(i)
+        w_set:Set[str] = dataset[id]
+        new_w_set = set()
+        # 加入w_num个新关键字
+        for j in range(w_num):
+            # 生成关键字
+            new_w = None
+            while True:
+                new_w = 'w'+str(random.randint(1, 1001))
+                if new_w not in w_set and new_w not in new_w_set:
+                    break
+            new_w_set.add(new_w)
+
+        upd_dataset[id] = new_w_set
+    
+    print(len(upd_dataset['1']))
+    print(upd_dataset['1'])
+    print(len(upd_dataset['1000']))
+    
+    with open(filename1, 'wb') as f1:
+        pickle.dump(upd_dataset, f1)
+
+
+
 
 
 if __name__ == '__main__':
     # 100K文件，每个文件中200个关键字。w1只存在于前200个文件中,w2~w10只存在于前1000个文件中
-    gen_dataset2(100000, 200, './100K_file_200_w_200.dat', './inv_100K_file_200_w_200.dat', 200)
+    # gen_dataset2(100000, 200, './100K_file_200_w_200.dat', './inv_100K_file_200_w_200.dat', 200)
     # 100K文件，每个文件中200个关键字。w1只存在于前400个文件中,w2~w10只存在于前1000个文件中
-    gen_dataset2(100000, 200, './100K_file_200_w_400.dat', './inv_100K_file_200_w_400.dat', 400)
+    # gen_dataset2(100000, 200, './100K_file_200_w_400.dat', './inv_100K_file_200_w_400.dat', 400)
     # 100K文件，每个文件中200个关键字。w1只存在于前600个文件中,w2~w10只存在于前1000个文件中
-    gen_dataset2(100000, 200, './100K_file_200_w_600.dat', './inv_100K_file_200_w_600.dat', 600)
+    # gen_dataset2(100000, 200, './100K_file_200_w_600.dat', './inv_100K_file_200_w_600.dat', 600)
     # 100K文件，每个文件中200个关键字。w1只存在于前800个文件中,w2~w10只存在于前1000个文件中
-    gen_dataset2(100000, 200, './100K_file_200_w_800.dat', './inv_100K_file_200_w_800.dat', 800)
+    # gen_dataset2(100000, 200, './100K_file_200_w_800.dat', './inv_100K_file_200_w_800.dat', 800)
     # 100K文件，每个文件中200个关键字。w1只存在于前1000个文件中,w2~w10只存在于前1000个文件中
-    gen_dataset2(100000, 200, './100K_file_200_w_1000.dat', './inv_100K_file_200_w_1000.dat', 1000)
+    # gen_dataset2(100000, 200, './100K_file_200_w_1000.dat', './inv_100K_file_200_w_1000.dat', 1000)
 
 
     # # 100K文件，每个文件中50个关键字
@@ -134,3 +174,14 @@ if __name__ == '__main__':
     # gen_dataset1(60000, 200, './60K_file_200_w.dat', './inv_60K_file_200_w.dat')
     # # 80K文件，每个文件中200关键字
     # gen_dataset1(80000, 200, './80K_file_200_w.dat', './inv_80K_file_200_w.dat')
+
+    # 100K 文件, 每个文件中200关键字前提下, add 100K w-id pair, 固定更新文件数为1000
+    gen_upd_dataset(1000, 100, './100K_file_200_w.dat', 'upd_100K.dat')
+    # 100K 文件, 每个文件中200关键字前提下, add 200K w-id pair, 固定更新文件数为1000
+    gen_upd_dataset(1000, 200, './100K_file_200_w.dat', 'upd_200K.dat')
+    # 100K 文件, 每个文件中200关键字前提下, add 300K w-id pair, 固定更新文件数为1000
+    gen_upd_dataset(1000, 300, './100K_file_200_w.dat', 'upd_300K.dat')
+    # 100K 文件, 每个文件中200关键字前提下, add 400K w-id pair, 固定更新文件数为1000
+    gen_upd_dataset(1000, 400, './100K_file_200_w.dat', 'upd_400K.dat')
+    # 100K 文件, 每个文件中200关键字前提下, add 500K w-id pair, 固定更新文件数为1000
+    gen_upd_dataset(1000, 500, './100K_file_200_w.dat', 'upd_500K.dat')

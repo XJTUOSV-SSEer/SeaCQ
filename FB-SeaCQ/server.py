@@ -4,6 +4,7 @@ import hmac
 from typing import Dict,Set,Tuple
 from web3 import Web3
 import json
+import time
 import numbthy
 
 
@@ -21,6 +22,8 @@ def search(t_w:bytes, P_Q, st, index1:Dict[bytes,Tuple[bytes,bytes]], index2:Dic
         result - 查询结果及证明。一个集合，其中元素为元组类型(c_fid,pi,type[,p])。c_fid为密文，pi为该文件对应的存在证明/不存在证明，
                  type标识pi的类型：若是存在证明，type==1; 若是不存在证明，type==0。当是不存在证明时，额外返回p，即
                  p=P_Q/gcd(P_fid,P_Q)
+        t1 - find result time
+        t2 - generate VO time
     '''
     
     # 结果
@@ -30,6 +33,9 @@ def search(t_w:bytes, P_Q, st, index1:Dict[bytes,Tuple[bytes,bytes]], index2:Dic
     msa=Accumulator.Accumulator(p=252533614457563255817176556954479732787,
                                 q=326896810465200637570669519551882712907,
                                 g=65537)
+
+    t1_s = time.time()
+    t2 = 0
 
     st_new=st
     # 遍历w对应的链
@@ -53,8 +59,14 @@ def search(t_w:bytes, P_Q, st, index1:Dict[bytes,Tuple[bytes,bytes]], index2:Dic
         type=0
         pi=None
         if P_fid%P_Q==0:
+            t2_s = time.time()
+
             # 该文件匹配查询条件Q，生成存在证明
             pi=msa.prove_membership(P_Q,P_fid)
+
+            t2_e = time.time()
+            t2 = t2+t2_e-t2_s
+
             type=1
             # 将密文与证明加入结果
             t=(c_fid,pi,type)
@@ -66,8 +78,14 @@ def search(t_w:bytes, P_Q, st, index1:Dict[bytes,Tuple[bytes,bytes]], index2:Dic
             # P_Q / gcd
             p=P_Q//gcd
 
+            t2_s = time.time()
+
             # 该文件不匹配Q，生成不存在证明
             pi=msa.prove_non_membership(p,P_fid)
+
+            t2_e = time.time()
+            t2 = t2+t2_e-t2_s
+
             type=0
 
             t=(c_fid,pi,type,p)
@@ -76,8 +94,11 @@ def search(t_w:bytes, P_Q, st, index1:Dict[bytes,Tuple[bytes,bytes]], index2:Dic
         # 更新st_new
         st_new=st_old
     
+    t1_e = time.time()
+    t1 = t1_e - t1_s -t2
+    
     # 返回结果
-    return result
+    return result, t1, t2
 
 
 

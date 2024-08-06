@@ -14,7 +14,7 @@ web3 = Web3(Web3.WebsocketProvider("ws://127.0.0.1:8545", websocket_kwargs={'tim
 
 ########################### 加载合约地址和ABI ############################
 # 合约地址
-contract_address='0x590a8D5DEe98Ee7922dD3ec5762735Fc602F2D86'
+contract_address='0x5f93e743788B0c764AE3393807A4FecCFA8fa3b9'
 # 从json文件中读取abi
 json_file='../contract/build/contracts/ADS.json'
 abi=None
@@ -109,4 +109,13 @@ contract=web3.eth.contract(address=contract_address,abi=abi)
 # experiment.test_setup("../dataset/80K_file_200_w.dat", web3, contract)
 
 # 100K file, 200w, w1~w10匹配前1K文件，搜索2个w
-experiment.test_search("../dataset/100K_file_200_w_1000.dat", 2, web3, contract)
+# experiment.test_search("../dataset/100K_file_200_w_1000.dat", 2, web3, contract)
+
+# 100K file, 200 w, w1匹配前200文件，搜索10个w
+# experiment.test_search("../dataset/100K_file_200_w_200.dat", 10, web3, contract)
+# 100K file, 200 w, w1匹配前400文件，搜索10个w
+experiment.test_search("../dataset/100K_file_200_w_400.dat", 10, web3, contract)
+# 100K file, 200 w, w1匹配前600文件，搜索10个w
+experiment.test_search("../dataset/100K_file_200_w_600.dat", 10, web3, contract)
+# 100K file, 200 w, w1匹配前800文件，搜索10个w
+experiment.test_search("../dataset/100K_file_200_w_800.dat", 10, web3, contract)

@@ -8,6 +8,7 @@ from web3 import Web3
 import json
 import math
 import os
+import time
 
 
 def setup(dataset:Dict[str,Set[str]], web3, contract):
@@ -25,6 +26,9 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
         index2 - 一个字典。key为t_fid（bytes类型），value为该文件对应的P_fid（一个大整数）。
         ST - 一个字典。key为w（str类型），value为对应的st_c（bytes类型）
         gas - 消耗的gas
+        t1 - index construction time
+        t2 - ADS generation time
+        t3 - transaction time
     '''
 
     # 参数长度：
@@ -49,21 +53,31 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
     # 一个字典，储存每个关键字对应的st。key为str类型，value为bytes类型
     ST=dict()
 
+    # 优化，用索引储存w和fid对应的素数
+    primetable:Dict[str, int] = dict()
+
     # 生成对称加密密钥k1,k2
     k1='XJTUOSV1'.zfill(16).encode('utf-8')
     k2='XJTUOSV2'.zfill(16).encode('utf-8')
 
 
-    # 根据数据集，构造倒排索引（字典类型,Dict[str,Set[str]]）
+    # 根据数据集，构造倒排索引（字典类型,Dict[str,Set[str]]）和素数表
     inv_index=dict()
     for fid,w_set in dataset.items():
+        primetable[fid] = Accumulator.str2prime(fid)
         for w in w_set:
             # 关键字尚不存在，需要创建一个k-v pair
             if w not in inv_index:
                 # 创建一个空集合
                 inv_index[w]=set()
             inv_index[w].add(fid)
+
+            if w not in primetable:
+                primetable[w] = Accumulator.str2prime(w)
     
+
+    t1_s = time.time()
+    t2 = 0
 
     # 遍历倒排索引，计算密文和Acc_w
     for w, fid_set in inv_index.items():
@@ -95,7 +109,8 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
             c_st=bytes(a^b for a,b in zip(part1,part2))
 
             # 更新X_w
-            x=Accumulator.str2prime(fid)
+            # x=Accumulator.str2prime(fid)
+            x = primetable[fid]
             X_w.add(x)
 
             # 储存在索引中
@@ -106,9 +121,13 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
         
         # 更新ST
         ST[w]=st_old
-
+        
+        t2_s = time.time()
         # 计算X_w对应的Acc
         Acc_w, _=msa.genAcc(X_w)
+        t2_e = time.time()
+        t2 = t2 + t2_e - t2_s
+
         # 将Acc_w加入ADS
         ADS_w[w]=Acc_w
     
@@ -119,25 +138,40 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
         # 计算文件中关键字对应的素数集合
         X_id=set()
         for w in wset:
-            x=Accumulator.str2prime(w)
+            # x=Accumulator.str2prime(w)
+            x = primetable[w]
             X_id.add(x)
+
+        t2_s = time.time()
         Acc_fid,P_fid=msa.genAcc(X_id)
+        t2_e = time.time()
+        t2 = t2 + t2_e - t2_s
 
         # 将t_fid,P_fid加入索引
         index2[t_fid]=P_fid
         # 将Acc_fid加入ADS
         ADS_fid[fid]=Acc_fid
+    
+    t1_e = time.time()
+    t1 = t1_e - t1_s -t2
 
+    print(len(ADS_w))
+    print(len(ADS_fid))
+
+    t3_s = time.time()
     # 调用智能合约
-    batch_size=5000
+    batch_size=1000
     # 将ADS_w批量存入区块链
     gas_w=batch_add(ADS_w, 1, batch_size,web3,contract)
     gas_fid=batch_add(ADS_fid, 2, batch_size,web3,contract)
     # 总的gas
     gas=gas_w+gas_fid
 
+    t3_e = time.time()
+    t3 = t3_e - t3_s
+
     # 将密钥和构建的两个索引返回
-    return k1,k2,index1,index2,ST,gas
+    return k1,k2,index1,index2,ST,gas, t1, t2, t3
 
 
 
@@ -190,7 +224,7 @@ def batch_add(ADS:Dict[str,int], type:int, batch_size:int, web3, contract):
         tx_hash=contract.functions.batch_setADS(_k_list, _v_list, current_size, type).transact({
             'from':web3.eth.accounts[0], 
             'gasPrice': web3.eth.gasPrice, 
-            'gas': web3.eth.getBlock('latest').gasLimit})
+            'gas': 10000000000})
         tx_receipt = web3.eth.get_transaction_receipt(tx_hash)
         gas += tx_receipt['gasUsed']
 
@@ -245,6 +279,7 @@ def verify(w:str, P_Q:int, result:Set[Tuple[bytes,Any,int]], web3, contract, k2:
     output:
         flag - 标识验证是否通过。若为True，验证通过；若为False，验证失败
         R - 查询结果的明文。一个集合，元素为str。
+        t - verify time
     '''
 
     # 解密密钥
@@ -255,6 +290,8 @@ def verify(w:str, P_Q:int, result:Set[Tuple[bytes,Any,int]], web3, contract, k2:
                                 q=326896810465200637570669519551882712907,
                                 g=65537)
     
+    t_s = time.time()
+
     # X_w储存w对应的fid的素数
     X_w=set()
     # 储存匹配查询条件的fid
@@ -325,8 +362,11 @@ def verify(w:str, P_Q:int, result:Set[Tuple[bytes,Any,int]], web3, contract, k2:
     if Acc!=Acc_w:
         print("completeness verification failed")
         return False, R
+    
+    t_e = time.time()
+    t = t_e-t_s
 
-    return True, R
+    return True, R, t
 
 
 def update(ST:Dict[str,bytes], op:str, w:str, fid:str, index2:Dict[bytes,int], web3, contract):
@@ -425,6 +465,7 @@ def update_add(ST:Dict[str,bytes], w:str, fid:str, index2:Dict[bytes,int], web3,
     # 更新P_fid
     P_fid=P_fid*Accumulator.str2prime(w)
 
+    t1 = time.time()
     # 调用智能合约，更新区块链状态
     contract.functions.setADS(Web3.toBytes(text=w.zfill(16)), Web3.toBytes(Acc_w), 1).transact({
             'from':web3.eth.accounts[0], 
@@ -434,6 +475,8 @@ def update_add(ST:Dict[str,bytes], w:str, fid:str, index2:Dict[bytes,int], web3,
             'from':web3.eth.accounts[0], 
             'gasPrice': web3.eth.gasPrice, 
             'gas': web3.eth.getBlock('latest').gasLimit})
+    t2 = time.time()
+    print("single transact time:", t2-t1)
 
     # 更新ST
     ST[w]=st_new

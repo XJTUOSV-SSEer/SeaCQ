@@ -1,6 +1,7 @@
 # from web3 import Web3
 # import json
 # from hexbytes import HexBytes
+import math
 import Accumulator
 import time
 
@@ -52,15 +53,37 @@ import time
 # print(a)
 
 
-xset=set()
 
-for i in range(80000):
-    xset.add(Accumulator.str2prime(str(i)))
 msa=Accumulator.Accumulator(p=252533614457563255817176556954479732787,
                                 q=326896810465200637570669519551882712907,
                                 g=65537)
 
+xset=set()
+
 t1 = time.time()
-msa.genAcc(xset)
-t2=time.time()
+for i in range(1000):
+    xset.add(Accumulator.str2prime(str(i)))
+acc , P = msa.genAcc(xset)
+t2 = time.time()
 print(t2-t1)
+a, d = msa.prove_non_membership(Accumulator.str2prime('100000'), P)
+
+t1 = time.time()
+for i in range(100):
+    msa.verify_non_membership(a,d, acc, Accumulator.str2prime('100000'))
+t2 = time.time()
+print(t2-t1)
+
+# print(math.ceil(msa.n.bit_length() / 8))
+# for i in range(250, 1251, 250):
+#     times = i+100000
+#     n=1
+#     # for j in range(times):
+#     #     n *= msa.n
+#     # print(math.ceil(n.bit_length() / 8))
+#     print(16**times//(1024*1024))
+
+# t1 = time.time()
+# msa.genAcc(xset)
+# t2=time.time()
+# print(t2-t1)

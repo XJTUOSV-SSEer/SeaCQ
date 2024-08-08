@@ -29,6 +29,9 @@ def setup(dataset:Dict[str,Set[str]], web3, contract):
         P - ADS对应的素数乘积
         ST - 一个字典。key为w（str类型），value为对应的st_c（bytes类型）
         gas - 消耗的gas
+        t1 - 
+        t2 - 
+        t3 - 
     '''
 
     # 参数长度：

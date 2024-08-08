@@ -6,6 +6,7 @@ from typing import Dict,Set,Tuple,Any, List, Optional
 import random
 import binSearchTree
 import round
+import time
 
 
 class server:
@@ -31,6 +32,9 @@ class server:
     def __init__(self, web3, contract) -> None:
         self.web3 = web3
         self.contract = contract
+        self.root_pos = dict()
+        self.trees = dict()
+        self.CMAP = dict()
 
 
 
@@ -49,12 +53,22 @@ class server:
             token - 搜索令牌，每个元素为一个四元组 (tau_w, k_w, tau_w_upd, k_w_upd)，对应于一个查询的关键字
 
         output:
-            round_list
-            merkle_proof
+            round_list - 储存搜索的所有轮次
+            merkle_proof - 对应所有bound结点的merkle proof。一个字典，键为tau_w，值为tau_w对应的Merkel子树
+            t1 - search find result time
+            t2 - search generate VO time
+            t3 - update generate ADS time
+            t4 - update transact time
+            gas - 更新时花费的gas
         '''
 
         # 令牌
         
+        t1_s = time.time()
+        t2 = 0
+        t3 = 0
+        t4 = 0
+        gas = 0
         
         ########################### 为token中每个tau_w建立树（第一次搜索时） #########################
         # 首先判断tau_w是否存在于trees数组
@@ -79,6 +93,8 @@ class server:
         for tau_w, k_w, tau_w_upd, k_w_upd in token:
             # 获取tau_w对应的二叉搜索树
             tree = self.trees[tau_w]
+
+            t3_s = time.time()
 
             # 储存w对应的更新的id
             upd_id_list = []
@@ -121,7 +137,11 @@ class server:
 
             # 然后更新树结点中的hash
             binSearchTree.binSearchTree.update_hash(tree, self.root_pos[tau_w])
+
+            t3_e = time.time()
+            t3 = t3+t3_e-t3_s
         
+            t4_s = time.time()
 
             # 将proofs和upd_id_list发送至区块链进行验证和更新hash_root
             # 注意，部分proof可能为空，因为对应关键字未被更新。
@@ -139,18 +159,27 @@ class server:
                                                 len(upd_id_list)).transact({
                 'from':self.web3.eth.accounts[0], 
                 'gasPrice': self.web3.eth.gasPrice, 
-                'gas': self.web3.eth.getBlock('latest').gasLimit})
+                'gas': 3000000000})
             tx_receipt = self.web3.eth.get_transaction_receipt(tx_hash)
-            print("transaction status:",tx_receipt['status'])
+            if tx_receipt['status'] != 1:
+                print("transaction status:",tx_receipt['status'])
+            gas = gas+tx_receipt['gasUsed']
+ 
+            t4_e = time.time()
+            t4 = t4+t4_e-t4_s
             
 
 
 
         ############################ JOIN QUERY ####################################
-        round_list, merkle_proof = self.join_query(token)
+        round_list, merkle_proof, t2 = self.join_query(token)
+
+        t1_e = time.time()
+        t1 = t1_e - t1_s -t2 -t3 -t4
+        
 
         # 返回
-        return round_list, merkle_proof
+        return round_list, merkle_proof, t1, t2, t3, t4, gas
 
 
 
@@ -165,6 +194,7 @@ class server:
         output:
             round_list - 储存搜索的所有轮次
             merkle_proof - 对应所有bound结点的merkle proof。一个字典，键为tau_w，值为tau_w对应的Merkel子树
+            t - generate VO time
         '''
 
         # 储存搜索的所有轮次
@@ -262,6 +292,7 @@ class server:
             round_list.append(r)
 
         ################################ 生成merkle proof ###############################
+        t_s = time.time()
 
         # 根据w_bounds中，每个tau_w对应的bound结点，计算每棵树的merkle proof
         # 同时建立一个映射，将原树中结点的下标映射到merkle子树中结点的下标。例如，原树中某内部结点的下标为m，merkle
@@ -289,8 +320,11 @@ class server:
                     ub = index_map[ub]
                 r.bound[tau_w] = (lb, ub)
         
+        t_e = time.time()
+        t=t_e-t_s
+
         # 返回
-        return round_list, merkle_proof
+        return round_list, merkle_proof, t
 
 
 

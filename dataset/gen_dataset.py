@@ -100,9 +100,10 @@ def gen_dataset2(f_num:int, w_num:int, filename1:str, filename2:str, w1_f_num):
         
 
 
-def gen_upd_dataset(f_num:int, w_num:int, dataset_name:str, filename1:str):
+def gen_upd_dataset(f_num:int, w_num:int, dataset_name:str, filename1:str, filename2:str):
     '''
-    生成add的数据,要求w-id不能已存在于数据库. 以fid-w_set的形式持久化存储
+    生成add的数据,要求w-id不能已存在于数据库. 以fid-w_set的形式持久化存储在filename1，以w-fid的形式结构化储存在
+    filename2
     input:
         f_num - 对前f_num个文件更新
         w_num - 每个文件add w_num个新关键字
@@ -124,7 +125,7 @@ def gen_upd_dataset(f_num:int, w_num:int, dataset_name:str, filename1:str):
             # 生成关键字
             new_w = None
             while True:
-                new_w = 'w'+str(random.randint(1, 1001))
+                new_w = 'w'+str(random.randint(1, 1000))
                 if new_w not in w_set and new_w not in new_w_set:
                     break
             new_w_set.add(new_w)
@@ -137,7 +138,17 @@ def gen_upd_dataset(f_num:int, w_num:int, dataset_name:str, filename1:str):
     
     with open(filename1, 'wb') as f1:
         pickle.dump(upd_dataset, f1)
-
+    
+    # 倒排索引
+    inverted_index:Dict[str, Set[int]] = dict()
+    # 计算得到倒排索引
+    for f, w_set in upd_dataset.items():
+        for w in w_set:
+            if w not in inverted_index:
+                inverted_index[w] = set()
+            inverted_index[w].add(int(f))
+    with open(filename2, 'wb') as f2:
+        pickle.dump(inverted_index, f2)
 
 
 
@@ -176,12 +187,12 @@ if __name__ == '__main__':
     # gen_dataset1(80000, 200, './80K_file_200_w.dat', './inv_80K_file_200_w.dat')
 
     # 100K 文件, 每个文件中200关键字前提下, add 100K w-id pair, 固定更新文件数为1000
-    gen_upd_dataset(1000, 100, './100K_file_200_w.dat', 'upd_100K.dat')
+    gen_upd_dataset(1000, 100, './100K_file_200_w.dat', 'upd_100K.dat', 'inv_upd_100K.dat')
     # 100K 文件, 每个文件中200关键字前提下, add 200K w-id pair, 固定更新文件数为1000
-    gen_upd_dataset(1000, 200, './100K_file_200_w.dat', 'upd_200K.dat')
+    gen_upd_dataset(1000, 200, './100K_file_200_w.dat', 'upd_200K.dat', 'inv_upd_200K.dat')
     # 100K 文件, 每个文件中200关键字前提下, add 300K w-id pair, 固定更新文件数为1000
-    gen_upd_dataset(1000, 300, './100K_file_200_w.dat', 'upd_300K.dat')
+    gen_upd_dataset(1000, 300, './100K_file_200_w.dat', 'upd_300K.dat', 'inv_upd_300K.dat')
     # 100K 文件, 每个文件中200关键字前提下, add 400K w-id pair, 固定更新文件数为1000
-    gen_upd_dataset(1000, 400, './100K_file_200_w.dat', 'upd_400K.dat')
+    gen_upd_dataset(1000, 400, './100K_file_200_w.dat', 'upd_400K.dat', 'inv_upd_400K.dat')
     # 100K 文件, 每个文件中200关键字前提下, add 500K w-id pair, 固定更新文件数为1000
-    gen_upd_dataset(1000, 500, './100K_file_200_w.dat', 'upd_500K.dat')
+    gen_upd_dataset(1000, 500, './100K_file_200_w.dat', 'upd_500K.dat', 'inv_upd_500K.dat')

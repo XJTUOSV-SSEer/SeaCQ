@@ -7,6 +7,7 @@ import binSearchTree
 import round
 import re
 import math
+import time
 
 
 class onwer:
@@ -30,6 +31,9 @@ class onwer:
     def __init__(self, web3, contract) -> None:
         self.web3 = web3
         self.contract = contract
+        self.DMAP = dict()
+        self.k1 = 'XJTUOSV1'.zfill(16).encode('utf-8')
+        self.k2 = 'XJTUOSV2'.zfill(16).encode('utf-8')
 
 
 
@@ -42,6 +46,10 @@ class onwer:
             dataset - 倒排索引数据集。一个字典，关键字为字符串类型，文件id为正整数类型
         output:
             CMAP - CMAP储存 k->v 的映射。k，v都为32字节bytes类型
+            t1 - index construct time
+            t2 - ADS generate time
+            t3 - transact time
+            gas - 
         '''
 
         # BMAP储存 tau_w->hash_root 的映射
@@ -49,6 +57,8 @@ class onwer:
         # CMAP储存 k->v 的映射
         CMAP=dict()
 
+        t1_s = time.time()
+        t2 = 0
         # 遍历每个关键字w
         for w, w_set in dataset.items():
             ################ 首先初始化DMAP中w的对应条目 ####################
@@ -64,6 +74,7 @@ class onwer:
             tau_w=hmac.new(key=self.k1, msg= (w.zfill(16)+str(alpha).zfill(16)).encode('utf-8'), digestmod='sha256').digest()
             k_w=hmac.new(key=self.k2, msg= (w.zfill(16)+str(alpha).zfill(16)).encode('utf-8'), digestmod='sha256').digest()
 
+            t2_s = time.time()
             # 构造二叉搜索树
             # 将w_set转换为有序的列表id_list
             id_list = sorted(w_set)
@@ -72,6 +83,9 @@ class onwer:
             tree:List[binSearchTree.binSearchTree]=[]
             root, root_hash = binSearchTree.binSearchTree.construct_tree(tree, id_list, 0, len(id_list)-1, '', '*')
 
+            t2_e = time.time()
+            t2 = t2+t2_e-t2_s
+            
             # 更新BMAP
             BMAP[tau_w] = root_hash
 
@@ -89,13 +103,21 @@ class onwer:
                 # 将k,v加入CMAP
                 CMAP[k]=v
         
+        t1_e = time.time()
+        t1 = t1_e-t1_s-t2
+        
 
         ################## 调用智能合约，将BMAP发送至区块链 ########################
-        gas = self.batch_add(BMAP, 1)
+        t3_s = time.time()
 
+        batch_size = 1
+        gas = self.batch_add(BMAP, batch_size)
+
+        t3_e = time.time()
+        t3 = t3_e - t3_s
 
         ################## 返回 #######################################
-        return CMAP
+        return CMAP, t1, t2, t3, gas
     
 
     def batch_add(self, BMAP:Dict[bytes,bytes], batch_size:int):
@@ -147,7 +169,7 @@ class onwer:
             tx_hash=self.contract.functions.batch_setBMAP(_k_list, _v_list, current_size).transact({
                 'from':self.web3.eth.accounts[0], 
                 'gasPrice': self.web3.eth.gasPrice, 
-                'gas': self.web3.eth.getBlock('latest').gasLimit})
+                'gas': 3000000000})
             tx_receipt = self.web3.eth.get_transaction_receipt(tx_hash)
             gas += tx_receipt['gasUsed']
 
@@ -166,6 +188,7 @@ class onwer:
         output:
             k - 32字节bytes
             v - 32字节bytes
+            gas - 储存H_w_upd花费的gas
         '''
 
         # 从DMAP中取出state信息
@@ -203,11 +226,15 @@ class onwer:
 
 
         ########################## 调用智能合约，将<tau_w_upd, H_w_upd>发送至区块链 ######################
-        self.contract.functions.set_UMAP(tau_w_upd, H_w_upd).transact({
-            'from':self.web3.eth.accounts[0], 
-            'gasPrice': self.web3.eth.gasPrice, 
-            'gas': self.web3.eth.getBlock('latest').gasLimit})
+        ########################## 测试中暂时删除，转为批量发送 ##############################
+        # tx_hash = self.contract.functions.set_UMAP(tau_w_upd, H_w_upd).transact({
+        #     'from':self.web3.eth.accounts[0], 
+        #     'gasPrice': self.web3.eth.gasPrice, 
+        #     'gas': 3000000000})
 
+        # # gas消耗
+        # tx_receipt = self.web3.eth.get_transaction_receipt(tx_hash)
+        # gas = tx_receipt['gasUsed']
 
 
         return k, v
@@ -248,7 +275,13 @@ class onwer:
     def verify(self, round_list:List[round.round], merkle_proof:Dict[bytes, List[binSearchTree.binSearchTree]]):
         '''
         用户验证服务器返回的查询结果，并得到结果
+        output:
+            flag - 
+            result - 
+            t - verify time
         '''
+
+        t_s = time.time()
 
         # 储存查询结果，若干个id
         result:Set[int] = set()
@@ -336,10 +369,9 @@ class onwer:
                     print("target id is not the largest ub of last round")
                     return False, None
         
-
         # 对round的检验通过
         print("verification for round list passes")
-        print("result:", result)
+        # print("result:", result)
         print(len(result))
 
 
@@ -355,10 +387,14 @@ class onwer:
             # 判断是否相等
             if root_hash != root_on_chain:
                 print('root hash error')
+                t_e = time.time()
+                t = t_e -t_s
                 return False, None
 
+        t_e = time.time()
+        t = t_e -t_s
 
-        return True, result
+        return True, result, t
 
 
 
